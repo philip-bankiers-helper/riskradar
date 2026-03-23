@@ -1,0 +1,288 @@
+{
+  "crisis_analysis": [
+    {
+      "crisis": "COVID Crash",
+      "period": "2020-02-19 to 2020-04-17",
+      "description": "Pandemic selloff, circuit breakers, VIX > 80",
+      "pre_heat_avg": 0.4077,
+      "pre_heat_max": 0.528,
+      "pre_avg_corr": 0.3441,
+      "pre_crowding": 0.42,
+      "during_heat_avg": 0.8434,
+      "during_heat_max": 0.9967,
+      "during_heat_min": 0.4013,
+      "during_avg_corr": 0.6932,
+      "during_max_corr": 0.8371,
+      "during_crowding_avg": 0.4758,
+      "during_crowding_max": 0.527,
+      "during_crowding_alpha": 0.061,
+      "n_days_hot": 38,
+      "n_days_critical": 35,
+      "n_trading_days": 42,
+      "heat_distribution": {
+        "emergency": 27,
+        "critical": 8,
+        "warm": 4,
+        "hot": 3
+      },
+      "early_warning_days": 33,
+      "first_warm_date": "2020-02-19",
+      "early_warning_hot_days": 27,
+      "first_hot_date": "2020-02-25",
+      "post_heat_avg": 0.8328,
+      "post_crowding": 0.5153,
+      "heat_increase": 0.4357,
+      "detected": true,
+      "strong_signal": true
+    },
+    {
+      "crisis": "2022 Bear Market",
+      "period": "2022-01-03 to 2022-10-12",
+      "description": "Fed rate hikes, tech crash, -27% drawdown",
+      "pre_heat_avg": 0.4417,
+      "pre_heat_max": 0.5463,
+      "pre_avg_corr": 0.4378,
+      "pre_crowding": 0.4335,
+      "during_heat_avg": 0.7858,
+      "during_heat_max": 0.9766,
+      "during_heat_min": 0.4092,
+      "during_avg_corr": 0.6969,
+      "during_max_corr": 0.7924,
+      "during_crowding_avg": 0.466,
+      "during_crowding_max": 0.5803,
+      "during_crowding_alpha": -0.1167,
+      "n_days_hot": 181,
+      "n_days_critical": 161,
+      "n_trading_days": 196,
+      "heat_distribution": {
+        "critical": 99,
+        "emergency": 62,
+        "hot": 20,
+        "warm": 15
+      },
+      "early_warning_days": 164,
+      "first_warm_date": "2022-01-03",
+      "early_warning_hot_days": 153,
+      "first_hot_date": "2022-01-14",
+      "post_heat_avg": 0.6912,
+      "post_crowding": 0.5559,
+      "heat_increase": 0.3441,
+      "detected": true,
+      "strong_signal": true
+    },
+    {
+      "crisis": "Aug 2024 Vol Spike",
+      "period": "2024-07-31 to 2024-08-16",
+      "description": "Yen carry trade unwind, VIX spike to 65",
+      "pre_heat_avg": 0.3007,
+      "pre_heat_max": 0.539,
+      "pre_avg_corr": 0.2948,
+      "pre_crowding": 0.3423,
+      "during_heat_avg": 0.5733,
+      "during_heat_max": 0.646,
+      "during_heat_min": 0.4778,
+      "during_avg_corr": 0.4901,
+      "during_max_corr": 0.5223,
+      "during_crowding_avg": 0.3363,
+      "during_crowding_max": 0.3619,
+      "during_crowding_alpha": 0.2132,
+      "n_days_hot": 6,
+      "n_days_critical": 0,
+      "n_trading_days": 13,
+      "heat_distribution": {
+        "warm": 7,
+        "hot": 6
+      },
+      "early_warning_days": 5,
+      "first_warm_date": "2024-07-31",
+      "early_warning_hot_days": 4,
+      "first_hot_date": "2024-08-01",
+      "post_heat_avg": 0.6941,
+      "post_crowding": 0.3428,
+      "heat_increase": 0.2726,
+      "detected": true,
+      "strong_signal": false
+    },
+    {
+      "crisis": "Jan 2026 Quant Blowup",
+      "period": "2026-01-06 to 2026-02-07",
+      "description": "Worst quant drawdown since Oct, US long-short deleveraging",
+      "pre_heat_avg": 0.515,
+      "pre_heat_max": 0.6615,
+      "pre_avg_corr": 0.338,
+      "pre_crowding": 0.3816,
+      "during_heat_avg": 0.4729,
+      "during_heat_max": 0.6416,
+      "during_heat_min": 0.3432,
+      "during_avg_corr": 0.2765,
+      "during_max_corr": 0.3268,
+      "during_crowding_avg": 0.4678,
+      "during_crowding_max": 0.4961,
+      "during_crowding_alpha": -0.1145,
+      "n_days_hot": 2,
+      "n_days_critical": 0,
+      "n_trading_days": 23,
+      "heat_distribution": {
+        "warm": 18,
+        "cool": 3,
+        "hot": 2
+      },
+      "early_warning_days": 11,
+      "first_warm_date": "2026-01-06",
+      "early_warning_hot_days": 10,
+      "first_hot_date": "2026-01-07",
+      "post_heat_avg": 0.3648,
+      "post_crowding": 0.4547,
+      "heat_increase": -0.0421,
+      "detected": true,
+      "strong_signal": false
+    }
+  ],
+  "signal_stats": {
+    "total_trading_days": 1749,
+    "date_range": "2019-04-01 to 2026-03-16",
+    "heat_score": {
+      "mean": 0.5654,
+      "median": 0.539,
+      "std": 0.2102,
+      "min": 0.1561,
+      "max": 1.0,
+      "p25": 0.3876,
+      "p75": 0.7538,
+      "p90": 0.851,
+      "p95": 0.9034
+    },
+    "heat_level_distribution": {
+      "warm": 519,
+      "cool": 478,
+      "critical": 383,
+      "hot": 187,
+      "emergency": 182
+    },
+    "avg_correlation": {
+      "mean": 0.5022,
+      "std": 0.1576,
+      "max": 0.8462
+    },
+    "crowding": {
+      "mean": 0.4671,
+      "std": 0.0732,
+      "max": 0.6209
+    },
+    "component_means": {
+      "absorption_ratio": 0.5826,
+      "turbulence_pct": 0.5082,
+      "div_ratio_pct": 0.4896,
+      "avg_corr_pct": 0.4668
+    },
+    "pct_days_cool": 27.3,
+    "pct_days_warm": 29.7,
+    "pct_days_hot": 10.7,
+    "pct_days_critical": 21.9,
+    "pct_days_emergency": 10.4
+  },
+  "forward_returns": {
+    "cool": {
+      "n_days": 478,
+      "avg_fwd_1d_bps": 13.0,
+      "median_fwd_1d_bps": 18.9,
+      "pct_negative_1d": 43.7,
+      "avg_fwd_5d_bps": 69.0,
+      "median_fwd_5d_bps": 80.1,
+      "pct_negative_5d": 38.2,
+      "avg_fwd_10d_bps": 133.2,
+      "median_fwd_10d_bps": 172.9,
+      "pct_negative_10d": 35.1,
+      "avg_fwd_20d_bps": 279.3,
+      "median_fwd_20d_bps": 372.2,
+      "pct_negative_20d": 29.7
+    },
+    "warm": {
+      "n_days": 519,
+      "avg_fwd_1d_bps": 23.1,
+      "median_fwd_1d_bps": 27.4,
+      "pct_negative_1d": 41.7,
+      "avg_fwd_5d_bps": 79.3,
+      "median_fwd_5d_bps": 98.4,
+      "pct_negative_5d": 37.3,
+      "avg_fwd_10d_bps": 166.5,
+      "median_fwd_10d_bps": 198.3,
+      "pct_negative_10d": 35.8,
+      "avg_fwd_20d_bps": 250.1,
+      "median_fwd_20d_bps": 288.0,
+      "pct_negative_20d": 34.3
+    },
+    "hot": {
+      "n_days": 187,
+      "avg_fwd_1d_bps": -20.6,
+      "median_fwd_1d_bps": 8.5,
+      "pct_negative_1d": 48.1,
+      "avg_fwd_5d_bps": 71.7,
+      "median_fwd_5d_bps": 65.6,
+      "pct_negative_5d": 41.7,
+      "avg_fwd_10d_bps": 114.9,
+      "median_fwd_10d_bps": 207.2,
+      "pct_negative_10d": 38.0,
+      "avg_fwd_20d_bps": 347.2,
+      "median_fwd_20d_bps": 388.1,
+      "pct_negative_20d": 33.2
+    },
+    "critical": {
+      "n_days": 383,
+      "avg_fwd_1d_bps": 25.1,
+      "median_fwd_1d_bps": 37.4,
+      "pct_negative_1d": 41.0,
+      "avg_fwd_5d_bps": 59.1,
+      "median_fwd_5d_bps": 125.1,
+      "pct_negative_5d": 39.2,
+      "avg_fwd_10d_bps": 136.0,
+      "median_fwd_10d_bps": 265.0,
+      "pct_negative_10d": 36.3,
+      "avg_fwd_20d_bps": 284.2,
+      "median_fwd_20d_bps": 522.5,
+      "pct_negative_20d": 31.3
+    },
+    "emergency": {
+      "n_days": 182,
+      "avg_fwd_1d_bps": 14.8,
+      "median_fwd_1d_bps": 27.1,
+      "pct_negative_1d": 42.9,
+      "avg_fwd_5d_bps": 127.2,
+      "median_fwd_5d_bps": 109.1,
+      "pct_negative_5d": 40.1,
+      "avg_fwd_10d_bps": 239.1,
+      "median_fwd_10d_bps": 302.7,
+      "pct_negative_10d": 30.2,
+      "avg_fwd_20d_bps": 542.3,
+      "median_fwd_20d_bps": 648.7,
+      "pct_negative_20d": 29.1
+    },
+    "crowding_quintiles": {
+      "Q1": {
+        "n_days": 350,
+        "avg_fwd_5d_bps": -22.0,
+        "avg_fwd_20d_bps": -35.2
+      },
+      "Q2": {
+        "n_days": 350,
+        "avg_fwd_5d_bps": 69.3,
+        "avg_fwd_20d_bps": 159.2
+      },
+      "Q3": {
+        "n_days": 349,
+        "avg_fwd_5d_bps": 80.0,
+        "avg_fwd_20d_bps": 434.9
+      },
+      "Q4": {
+        "n_days": 351,
+        "avg_fwd_5d_bps": 166.0,
+        "avg_fwd_20d_bps": 575.9
+      },
+      "Q5": {
+        "n_days": 349,
+        "avg_fwd_5d_bps": 88.4,
+        "avg_fwd_20d_bps": 404.5
+      }
+    }
+  }
+}

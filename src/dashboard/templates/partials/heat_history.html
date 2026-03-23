@@ -1,0 +1,8 @@
+<div class="card-header">
+    <span class="card-title">📈 Heat History</span>
+    <span class="card-subtitle">{{ n_points }} data points</span>
+</div>
+<div class="chart-container" id="heat-history-chart"></div>
+<script>
+    renderChart('heat-history-chart', '{{ chart_json | safe }}');
+</script>

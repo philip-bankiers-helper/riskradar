@@ -1,0 +1,199 @@
+{% extends "base.html" %}
+
+{% block content %}
+<!-- Header -->
+<div class="header">
+    <div style="display: flex; align-items: center; gap: 16px;">
+        <div class="header-title">🌡️ RISK RADAR <span>v0.4</span></div>
+        <span class="live-dot" id="live-dot"></span>
+        <span class="timestamp" id="header-time"></span>
+    </div>
+    <div class="header-badges">
+        <span class="badge badge-{{ heat_level }}" id="heat-badge">
+            {{ heat_level | upper }} {{ "%.3f" | format(heat_score) }}
+        </span>
+        <span class="badge badge-regime {% if regime == 'crisis' %}crisis{% endif %}">
+            {{ regime | upper }}
+        </span>
+        <span class="badge" style="background: {% if data_source == 'polygon' %}#2563eb{% elif data_source == 'yfinance' %}#7c3aed{% else %}#6b7280{% endif %}; color: white; font-size: 0.7rem;">
+            {{ data_source | upper }}
+        </span>
+        <span class="timestamp">{{ n_positions }} positions</span>
+    </div>
+</div>
+
+<!-- Dashboard Grid -->
+<div class="dashboard-grid">
+
+    <!-- Heat Score Gauge -->
+    <div class="card"
+         hx-get="/dashboard/partial/heat-gauge"
+         hx-trigger="load, every 10s"
+         hx-swap="innerHTML">
+        <div class="card-header">
+            <span class="card-title">🌡️ Heat Score</span>
+            <span class="htmx-indicator">updating...</span>
+        </div>
+        <div class="chart-container" id="heat-gauge-chart"></div>
+    </div>
+
+    <!-- Heat History -->
+    <div class="card"
+         hx-get="/dashboard/partial/heat-history"
+         hx-trigger="load, every 30s"
+         hx-swap="innerHTML">
+        <div class="card-header">
+            <span class="card-title">📈 Heat History</span>
+            <span class="htmx-indicator">updating...</span>
+        </div>
+        <div class="chart-container" id="heat-history-chart"></div>
+    </div>
+
+    <!-- Correlation Heatmap -->
+    <div class="card"
+         hx-get="/dashboard/partial/correlation"
+         hx-trigger="load, every 15s"
+         hx-swap="innerHTML">
+        <div class="card-header">
+            <span class="card-title">🔥 Correlation Matrix</span>
+            <span class="htmx-indicator">updating...</span>
+        </div>
+        <div class="chart-container" id="corr-heatmap-chart"></div>
+    </div>
+
+    <!-- MST Network -->
+    <div class="card"
+         hx-get="/dashboard/partial/mst"
+         hx-trigger="load, every 15s"
+         hx-swap="innerHTML">
+        <div class="card-header">
+            <span class="card-title">🕸️ MST Network</span>
+            <span class="htmx-indicator">updating...</span>
+        </div>
+        <div class="chart-container" id="mst-chart"></div>
+    </div>
+
+    <!-- Regime & Throttle Panel -->
+    <div class="card"
+         hx-get="/dashboard/partial/regime"
+         hx-trigger="load, every 10s"
+         hx-swap="innerHTML">
+        <div class="card-header">
+            <span class="card-title">🧠 Regime & Throttle</span>
+            <span class="htmx-indicator">updating...</span>
+        </div>
+    </div>
+
+    <!-- Factor Exposures -->
+    <div class="card"
+         hx-get="/dashboard/partial/factors"
+         hx-trigger="load, every 15s"
+         hx-swap="innerHTML">
+        <div class="card-header">
+            <span class="card-title">📊 Factor Exposures</span>
+            <span class="htmx-indicator">updating...</span>
+        </div>
+        <div class="chart-container" id="factors-chart"></div>
+    </div>
+
+    <!-- Clusters & HRP -->
+    <div class="card card-full"
+         hx-get="/dashboard/partial/clusters"
+         hx-trigger="load, every 20s"
+         hx-swap="innerHTML">
+        <div class="card-header">
+            <span class="card-title">🌲 Clusters & HRP</span>
+            <span class="htmx-indicator">updating...</span>
+        </div>
+    </div>
+
+    <!-- Position Attribution & Recommendations -->
+    <div class="card card-full"
+         hx-get="/dashboard/partial/attribution"
+         hx-trigger="load, every 15s"
+         hx-swap="innerHTML">
+        <div class="card-header">
+            <span class="card-title">📊 Position Attribution & Recommendations</span>
+            <span class="htmx-indicator">updating...</span>
+        </div>
+    </div>
+
+    <!-- Benchmark Comparison -->
+    <div class="card card-full"
+         hx-get="/dashboard/partial/benchmark"
+         hx-trigger="load, every 60s"
+         hx-swap="innerHTML">
+        <div class="card-header">
+            <span class="card-title">📊 Signal Benchmark</span>
+            <span class="htmx-indicator">updating...</span>
+        </div>
+    </div>
+
+    <!-- Alert History -->
+    <div class="card"
+         hx-get="/dashboard/partial/alerts"
+         hx-trigger="load, every 15s"
+         hx-swap="innerHTML">
+        <div class="card-header">
+            <span class="card-title">🔔 Alert History</span>
+            <span class="htmx-indicator">updating...</span>
+        </div>
+    </div>
+
+    <!-- Pre-Trade Simulator -->
+    <div class="card card-full">
+        <div class="card-header">
+            <span class="card-title">🔮 Pre-Trade Simulator</span>
+        </div>
+        <form class="sim-form"
+              hx-get="/dashboard/partial/simulate"
+              hx-target="#sim-result"
+              hx-indicator="#sim-loading">
+            <label>
+                Symbol
+                <input type="text" name="candidate_symbol" placeholder="INTC" required
+                       style="text-transform: uppercase;">
+            </label>
+            <label>
+                Weight %
+                <input type="number" name="candidate_weight" value="5" min="1" max="20" step="1">
+            </label>
+            <button type="submit">Simulate Impact</button>
+            <span class="htmx-indicator" id="sim-loading">analyzing...</span>
+        </form>
+        <div id="sim-result"></div>
+    </div>
+
+</div>
+
+<script>
+    // Update header clock
+    function updateClock() {
+        const el = document.getElementById('header-time');
+        if (el) {
+            el.textContent = new Date().toLocaleString('en-US', {
+                timeZone: 'America/New_York',
+                hour12: false,
+                year: 'numeric',
+                month: 'short',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            }) + ' ET';
+        }
+    }
+    updateClock();
+    setInterval(updateClock, 1000);
+
+    // Fix weight input: convert percentage to decimal for API
+    document.addEventListener('htmx:configRequest', function(evt) {
+        if (evt.detail.path === '/dashboard/partial/simulate') {
+            const params = evt.detail.parameters;
+            if (params.candidate_weight) {
+                params.candidate_weight = (parseFloat(params.candidate_weight) / 100).toString();
+            }
+        }
+    });
+</script>
+{% endblock %}

@@ -1,0 +1,8 @@
+<div class="card-header">
+    <span class="card-title">🕸️ MST Network</span>
+    <span class="card-subtitle">{{ n_edges }} edges · {{ n_communities }} communities</span>
+</div>
+<div class="chart-container" id="mst-chart"></div>
+<script>
+    renderChart('mst-chart', '{{ chart_json | safe }}');
+</script>

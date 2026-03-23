@@ -1,0 +1,71 @@
+<div class="card-header">
+    <span class="card-title">🧠 Regime & Throttle</span>
+    <span class="badge badge-regime {% if regime == 'crisis' %}crisis{% endif %}">{{ regime | upper }}</span>
+</div>
+<div class="regime-grid">
+    <div class="regime-item">
+        <div class="regime-item-label">Regime</div>
+        <div class="regime-item-value" style="color: {% if regime == 'crisis' %}var(--accent-critical){% elif regime == 'low_vol' %}var(--accent-cool){% else %}var(--accent-blue){% endif %};">
+            {{ regime | upper }}
+        </div>
+        <div class="progress-bar">
+            <div class="progress-fill" style="width: {{ (confidence * 100) | int }}%; background: var(--accent-blue);"></div>
+        </div>
+        <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">
+            Confidence: {{ "%.0f" | format(confidence * 100) }}%
+        </div>
+    </div>
+
+    <div class="regime-item">
+        <div class="regime-item-label">Transition Risk</div>
+        <div class="regime-item-value" style="color: {% if transition_risk > 0.1 %}var(--accent-critical){% elif transition_risk > 0.05 %}var(--accent-warm){% else %}var(--accent-cool){% endif %};">
+            {{ "%.1f" | format(transition_risk * 100) }}%
+        </div>
+        <div class="progress-bar">
+            <div class="progress-fill" style="width: {{ (transition_risk * 100) | int }}%; background: {% if transition_risk > 0.1 %}var(--accent-critical){% else %}var(--accent-warm){% endif %};"></div>
+        </div>
+    </div>
+
+    <div class="regime-item">
+        <div class="regime-item-label">DCC Stress</div>
+        <div class="regime-item-value" style="color: {% if dcc_stress > 0.7 %}var(--accent-critical){% elif dcc_stress > 0.5 %}var(--accent-warm){% else %}var(--accent-cool){% endif %};">
+            {{ "%.3f" | format(dcc_stress) }}
+        </div>
+        <div class="progress-bar">
+            <div class="progress-fill" style="width: {{ (dcc_stress * 100) | int }}%; background: {% if dcc_stress > 0.7 %}var(--accent-critical){% else %}var(--accent-warm){% endif %};"></div>
+        </div>
+    </div>
+
+    <div class="regime-item">
+        <div class="regime-item-label">Max Exposure</div>
+        <div class="regime-item-value" style="color: {% if max_exposure < 0.5 %}var(--accent-critical){% elif max_exposure < 0.8 %}var(--accent-warm){% else %}var(--accent-cool){% endif %};">
+            {{ "%.0f" | format(max_exposure * 100) }}%
+        </div>
+        <div class="progress-bar">
+            <div class="progress-fill" style="width: {{ (max_exposure * 100) | int }}%; background: var(--accent-cool);"></div>
+        </div>
+    </div>
+
+    <div class="regime-item">
+        <div class="regime-item-label">Target Reduction</div>
+        <div class="regime-item-value" style="color: {% if target_reduction > 0.3 %}var(--accent-critical){% elif target_reduction > 0.1 %}var(--accent-warm){% else %}var(--accent-cool){% endif %};">
+            {{ "%.0f" | format(target_reduction * 100) }}%
+        </div>
+    </div>
+
+    <div class="regime-item">
+        <div class="regime-item-label">New Positions</div>
+        <div class="regime-item-value" style="color: {% if new_position_allowed %}var(--accent-cool){% else %}var(--accent-critical){% endif %};">
+            {% if new_position_allowed %}ALLOWED{% else %}BLOCKED{% endif %}
+        </div>
+    </div>
+</div>
+
+{% if probabilities %}
+<div style="margin-top: 12px; font-size: 11px; color: var(--text-muted);">
+    Regime probabilities:
+    {% for name, prob in probabilities.items() %}
+        {{ name }}: {{ "%.1f" | format(prob * 100) }}%{% if not loop.last %} · {% endif %}
+    {% endfor %}
+</div>
+{% endif %}

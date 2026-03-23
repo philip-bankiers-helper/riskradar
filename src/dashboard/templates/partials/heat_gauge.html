@@ -1,0 +1,27 @@
+<div class="card-header">
+    <span class="card-title">🌡️ Heat Score</span>
+    <span class="badge badge-{{ level }}">{{ level | upper }}</span>
+</div>
+<div class="chart-container" id="heat-gauge-chart"></div>
+<div class="stats-row" style="margin-top: 12px;">
+    <div class="stat">
+        <span class="stat-label">Score</span>
+        <span class="stat-value {{ level }}">{{ "%.3f" | format(score) }}</span>
+    </div>
+    <div class="stat">
+        <span class="stat-label">Dominant Factor</span>
+        <span class="stat-value">{{ dominant_factor }}</span>
+    </div>
+    <div class="stat">
+        <span class="stat-label">Top Pair</span>
+        <span class="stat-value">{{ top_pair }}</span>
+    </div>
+</div>
+{% if action %}
+<div style="margin-top: 10px; font-size: 12px; color: var(--text-secondary);">
+    ⚡ {{ action }}
+</div>
+{% endif %}
+<script>
+    renderChart('heat-gauge-chart', '{{ chart_json | safe }}');
+</script>

@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Risk Radar — Live Dashboard</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+    <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+</head>
+<body>
+    {% block content %}{% endblock %}
+
+    <script>
+        // WebSocket for live heat score updates
+        (function() {
+            const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = protocol + '//' + location.host + '/ws/heat';
+            let ws = null;
+            let reconnectTimer = null;
+
+            function connect() {
+                ws = new WebSocket(wsUrl);
+
+                ws.onopen = function() {
+                    console.log('[RiskRadar] WebSocket connected');
+                    const dot = document.getElementById('live-dot');
+                    if (dot) dot.style.background = 'var(--accent-cool)';
+                };
+
+                ws.onmessage = function(event) {
+                    try {
+                        const data = JSON.parse(event.data);
+                        updateHeaderBadge(data);
+                    } catch(e) {
+                        console.error('[RiskRadar] WS parse error:', e);
+                    }
+                };
+
+                ws.onclose = function() {
+                    console.log('[RiskRadar] WebSocket closed, reconnecting in 5s...');
+                    const dot = document.getElementById('live-dot');
+                    if (dot) dot.style.background = '#ff2d2d';
+                    reconnectTimer = setTimeout(connect, 5000);
+                };
+
+                ws.onerror = function(e) {
+                    console.error('[RiskRadar] WebSocket error:', e);
+                };
+
+                // Send pings to keep connection alive
+                setInterval(function() {
+                    if (ws && ws.readyState === WebSocket.OPEN) {
+                        ws.send('ping');
+                    }
+                }, 30000);
+            }
+
+            function updateHeaderBadge(heat) {
+                const badge = document.getElementById('heat-badge');
+                if (badge) {
+                    badge.textContent = heat.level.toUpperCase() + ' ' + heat.score.toFixed(3);
+                    badge.className = 'badge badge-' + heat.level;
+                }
+                const scoreEl = document.getElementById('header-score');
+                if (scoreEl) {
+                    scoreEl.textContent = heat.score.toFixed(3);
+                }
+            }
+
+            connect();
+        })();
+
+        // Plotly render helper
+        function renderChart(elementId, configJson) {
+            try {
+                const config = JSON.parse(configJson);
+                const el = document.getElementById(elementId);
+                if (el && config.data) {
+                    Plotly.react(el, config.data, config.layout || {}, {
+                        displayModeBar: false,
+                        responsive: true
+                    });
+                }
+            } catch(e) {
+                console.error('[RiskRadar] Chart render error for ' + elementId + ':', e);
+            }
+        }
+    </script>
+</body>
+</html>

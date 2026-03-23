@@ -1,0 +1,41 @@
+<div class="card-header">
+    <span class="card-title">🔔 Alert History</span>
+</div>
+
+{% if alerts %}
+<div style="max-height: 300px; overflow-y: auto;">
+{% for alert in alerts | reverse %}
+    <div style="padding: 6px 8px; border-bottom: 1px solid #222; font-size: 0.8rem; display: flex; justify-content: space-between;">
+        <span>
+            {% if alert.tier == 'emergency' %}⛔
+            {% elif alert.tier == 'level_change' %}↕️
+            {% elif alert.tier == 'regime_shift' %}🔄
+            {% elif alert.tier == 'daily_summary' %}📋
+            {% else %}🔔{% endif %}
+            <strong>{{ alert.tier | replace('_', ' ') | title }}</strong>
+        </span>
+        <span style="color: #888;">
+            Heat: {{ "%.3f" | format(alert.heat_score) }} |
+            {{ alert.timestamp[:16] }}
+        </span>
+    </div>
+{% endfor %}
+</div>
+{% else %}
+<p style="color: #888; padding: 16px; font-size: 0.8rem;">No alerts sent yet.</p>
+{% endif %}
+
+{% if cooldowns %}
+<div style="margin-top: 8px; padding: 4px 8px; font-size: 0.7rem; color: #666;">
+    <strong>Cooldowns:</strong>
+    {% for tier, cd in cooldowns.items() %}
+        {{ tier | replace('_', ' ') }}:
+        {% if cd.on_cooldown %}
+            <span style="color: #f59e0b;">{{ cd.remaining_minutes }}m left</span>
+        {% else %}
+            <span style="color: #22c55e;">ready</span>
+        {% endif %}
+        {% if not loop.last %} | {% endif %}
+    {% endfor %}
+</div>
+{% endif %}

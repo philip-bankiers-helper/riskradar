@@ -1,0 +1,103 @@
+<div class="card-header">
+    <span class="card-title">📊 Position Attribution & Recommendations</span>
+    <span class="card-subtitle">{{ summary }}</span>
+</div>
+
+{% if attribution %}
+<div style="display: grid; grid-template-columns: 2fr 1fr; gap: 16px;">
+    <!-- Attribution Table -->
+    <div>
+        <div style="font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px;">
+            Heat Contribution by Position
+        </div>
+        <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
+            <thead>
+                <tr style="border-bottom: 1px solid var(--border); color: var(--text-muted);">
+                    <th style="text-align: left; padding: 6px 8px;">Symbol</th>
+                    <th style="text-align: right; padding: 6px 8px;">Weight</th>
+                    <th style="text-align: right; padding: 6px 8px;">Heat Share</th>
+                    <th style="text-align: right; padding: 6px 8px;">Risk Contrib</th>
+                    <th style="text-align: left; padding: 6px 8px;">Factor</th>
+                    <th style="text-align: center; padding: 6px 8px;">Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for a in attribution %}
+                <tr style="border-bottom: 1px solid var(--border-light, rgba(255,255,255,0.05));">
+                    <td style="padding: 6px 8px; font-weight: 600;">{{ a.symbol }}</td>
+                    <td style="text-align: right; padding: 6px 8px;">{{ "%.1f" | format(a.weight * 100) }}%</td>
+                    <td style="text-align: right; padding: 6px 8px;">
+                        <span style="display: inline-block; width: {{ (a.heat_share * 100) | int }}px; height: 8px; background: {% if a.heat_share > 0.2 %}#ff2d2d{% elif a.heat_share > 0.15 %}#ff6b35{% else %}#00d4aa{% endif %}; border-radius: 4px; margin-right: 6px; vertical-align: middle;"></span>
+                        {{ "%.1f" | format(a.heat_share * 100) }}%
+                    </td>
+                    <td style="text-align: right; padding: 6px 8px;">{{ "%.1f" | format(a.risk_contribution * 100) }}%</td>
+                    <td style="padding: 6px 8px; color: var(--text-secondary);">{{ a.dominant_factor }} ({{ "%.2f" | format(a.dominant_factor_beta) }})</td>
+                    <td style="text-align: center; padding: 6px 8px;">
+                        {% if a.recommendation == "hold" %}
+                        <span style="background: rgba(0,212,170,0.2); color: #00d4aa; padding: 2px 8px; border-radius: 4px; font-size: 11px;">HOLD</span>
+                        {% elif a.recommendation == "reduce" %}
+                        <span style="background: rgba(255,45,45,0.2); color: #ff2d2d; padding: 2px 8px; border-radius: 4px; font-size: 11px;">REDUCE</span>
+                        {% elif a.recommendation == "hedge" %}
+                        <span style="background: rgba(255,107,53,0.2); color: #ff6b35; padding: 2px 8px; border-radius: 4px; font-size: 11px;">HEDGE</span>
+                        {% elif a.recommendation == "monitor" %}
+                        <span style="background: rgba(240,173,78,0.2); color: #f0ad4e; padding: 2px 8px; border-radius: 4px; font-size: 11px;">MONITOR</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Trade Actions -->
+    <div>
+        {% if actions %}
+        <div style="font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px;">
+            Recommended Actions
+        </div>
+        {% for action in actions %}
+        <div style="background: var(--card-bg, rgba(255,255,255,0.03)); border: 1px solid var(--border, rgba(255,255,255,0.1)); border-radius: 8px; padding: 10px; margin-bottom: 8px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                <span style="font-weight: 600; font-size: 13px;">
+                    {% if action.action == "reduce" %}↓{% elif action.action == "hedge" %}🛡️{% else %}→{% endif %}
+                    {{ action.symbol }}
+                </span>
+                <span style="font-size: 11px; padding: 2px 6px; border-radius: 4px;
+                    {% if action.urgency == 'immediate' %}background: rgba(255,45,45,0.2); color: #ff2d2d;
+                    {% elif action.urgency == 'today' %}background: rgba(255,107,53,0.2); color: #ff6b35;
+                    {% elif action.urgency == 'this_week' %}background: rgba(240,173,78,0.2); color: #f0ad4e;
+                    {% else %}background: rgba(0,212,170,0.2); color: #00d4aa;{% endif %}">
+                    {{ action.urgency | replace('_', ' ') | upper }}
+                </span>
+            </div>
+            <div style="font-size: 12px; color: var(--text-secondary);">
+                {{ "%.1f" | format(action.current_weight * 100) }}% → {{ "%.1f" | format(action.target_weight * 100) }}%
+                <span style="color: var(--text-muted); margin-left: 4px;">({{ "%.0f" | format(action.impact_estimate) }} bps est.)</span>
+            </div>
+            <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">{{ action.reason }}</div>
+        </div>
+        {% endfor %}
+        {% else %}
+        <div style="font-size: 12px; color: var(--text-muted); padding: 16px; text-align: center;">
+            No actions needed at current heat level.
+        </div>
+        {% endif %}
+
+        {% if hedges %}
+        <div style="font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; margin: 12px 0 8px 0;">
+            Hedge Suggestions
+        </div>
+        {% for h in hedges %}
+        <div style="background: rgba(255,107,53,0.05); border: 1px solid rgba(255,107,53,0.2); border-radius: 8px; padding: 10px; margin-bottom: 8px;">
+            <div style="font-weight: 600; font-size: 13px;">🛡️ {{ h.symbol }} ({{ "%.1f" | format(h.target_weight * 100) }}%)</div>
+            <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">{{ h.reason }}</div>
+        </div>
+        {% endfor %}
+        {% endif %}
+    </div>
+</div>
+{% else %}
+<div style="font-size: 12px; color: var(--text-muted); padding: 24px; text-align: center;">
+    Attribution data not yet available. Waiting for heat score computation...
+</div>
+{% endif %}

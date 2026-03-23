@@ -1,0 +1,89 @@
+{% if error %}
+<div class="sim-error">❌ {{ error }}</div>
+{% elif result %}
+<div class="sim-result">
+    <div style="display: flex; align-items: center; gap: 16px; margin-bottom: 12px;">
+        <span class="sim-recommendation {{ result.recommendation }}">
+            {{ result.recommendation }}
+        </span>
+        <span style="font-size: 14px; font-weight: 600;">
+            {{ result.candidate }} @ {{ "%.1f" | format(result.candidate_weight * 100) }}%
+        </span>
+    </div>
+
+    {% if result.reason %}
+    <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 12px;">
+        {{ result.reason }}
+    </div>
+    {% endif %}
+
+    <div class="stats-row">
+        <div class="stat">
+            <span class="stat-label">Heat Before</span>
+            <span class="stat-value">{{ "%.3f" | format(result.heat_before) }}</span>
+        </div>
+        <div class="stat">
+            <span class="stat-label">Heat After</span>
+            <span class="stat-value {% if result.heat_after > result.heat_before %}critical{% else %}cool{% endif %}">
+                {{ "%.3f" | format(result.heat_after) }}
+            </span>
+        </div>
+        <div class="stat">
+            <span class="stat-label">Delta</span>
+            <span class="stat-value {% if result.heat_delta > 0 %}critical{% else %}cool{% endif %}">
+                {% if result.heat_delta > 0 %}+{% endif %}{{ "%.3f" | format(result.heat_delta) }}
+            </span>
+        </div>
+    </div>
+
+    {% if result.factor_impact %}
+    <div style="margin-top: 12px;">
+        <div style="font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px;">
+            Factor Impact
+        </div>
+        <div class="stats-row">
+            {% if result.factor_impact.dominant_factor %}
+            <div class="stat">
+                <span class="stat-label">Dominant</span>
+                <span class="stat-value">{{ result.factor_impact.dominant_factor }}</span>
+            </div>
+            {% endif %}
+            {% if result.factor_impact.most_correlated_with %}
+            <div class="stat">
+                <span class="stat-label">Most Correlated With</span>
+                <span class="stat-value">{{ result.factor_impact.most_correlated_with }}</span>
+            </div>
+            {% endif %}
+            {% if result.factor_impact.dollar_beta is defined %}
+            <div class="stat">
+                <span class="stat-label">Dollar Beta</span>
+                <span class="stat-value">{{ "%.2f" | format(result.factor_impact.dollar_beta) }}</span>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+
+    {% if result.cluster_impact %}
+    <div style="margin-top: 12px;">
+        <div style="font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px;">
+            Cluster Impact
+        </div>
+        <div class="stats-row">
+            {% if result.cluster_impact.increases_concentration is defined %}
+            <div class="stat">
+                <span class="stat-label">Increases Concentration</span>
+                <span class="stat-value {% if result.cluster_impact.increases_concentration %}critical{% else %}cool{% endif %}">
+                    {% if result.cluster_impact.increases_concentration %}YES{% else %}NO{% endif %}
+                </span>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% else %}
+<div style="font-size: 12px; color: var(--text-muted); padding: 12px;">
+    Enter a ticker and weight to simulate impact on your portfolio.
+</div>
+{% endif %}

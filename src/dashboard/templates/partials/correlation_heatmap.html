@@ -1,0 +1,8 @@
+<div class="card-header">
+    <span class="card-title">🔥 Correlation Matrix</span>
+    <span class="card-subtitle">Avg: {{ "%.3f" | format(avg_correlation) }} | Top: {{ top_pair }}</span>
+</div>
+<div class="chart-container" id="corr-heatmap-chart"></div>
+<script>
+    renderChart('corr-heatmap-chart', '{{ chart_json | safe }}');
+</script>

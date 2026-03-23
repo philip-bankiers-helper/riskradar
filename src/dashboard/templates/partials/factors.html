@@ -1,0 +1,8 @@
+<div class="card-header">
+    <span class="card-title">📊 Factor Exposures</span>
+    <span class="card-subtitle">{{ n_factors }} factors</span>
+</div>
+<div class="chart-container" id="factors-chart"></div>
+<script>
+    renderChart('factors-chart', '{{ chart_json | safe }}');
+</script>

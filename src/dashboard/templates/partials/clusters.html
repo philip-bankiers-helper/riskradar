@@ -1,0 +1,58 @@
+<div class="card-header">
+    <span class="card-title">🌲 Clusters & HRP</span>
+    <span class="card-subtitle">Modularity: {{ "%.3f" | format(modularity) }} · HRP HHI: {{ "%.3f" | format(hrp_concentration) }}</span>
+</div>
+
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+    <!-- Communities -->
+    <div>
+        <div style="font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px;">
+            Communities
+        </div>
+        {% set colors = ['#00d4aa', '#ff6b35', '#4ecdc4', '#ff2d2d', '#45b7d1', '#f0ad4e', '#96ceb4', '#c084fc'] %}
+        {% for comm in communities %}
+        <div style="margin-bottom: 8px;">
+            <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 4px;">
+                <span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: {{ colors[comm.cluster_id % 8] }}; margin-right: 6px;"></span>
+                Cluster {{ comm.cluster_id }} ({{ comm.size }} assets)
+            </div>
+            <div>
+                {% for member in comm.members %}
+                <span class="community-tag">
+                    <span class="community-dot" style="background: {{ colors[comm.cluster_id % 8] }};"></span>
+                    {{ member }}
+                </span>
+                {% endfor %}
+            </div>
+        </div>
+        {% endfor %}
+
+        {% if migrations %}
+        <div style="margin-top: 12px;">
+            <div style="font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px;">
+                ⚠️ Recent Migrations
+            </div>
+            {% for m in migrations %}
+            <div class="migration-alert">
+                <strong>{{ m.symbol }}</strong> migrated from
+                [{{ m.from_peers | join(', ') }}] →
+                [{{ m.to_peers | join(', ') }}]
+                (overlap: {{ "%.0f" | format(m.overlap * 100) }}%)
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- HRP Comparison Chart -->
+    <div>
+        <div style="font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px;">
+            Actual vs HRP Optimal Weights
+        </div>
+        <div class="chart-container" id="hrp-chart"></div>
+    </div>
+</div>
+
+<script>
+    renderChart('hrp-chart', '{{ chart_json | safe }}');
+</script>

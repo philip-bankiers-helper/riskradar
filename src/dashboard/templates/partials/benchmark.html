@@ -1,0 +1,52 @@
+<div class="card-header">
+    <span class="card-title">📊 Signal Benchmark</span>
+    <span class="badge" style="background: #2563eb; color: white; font-size: 0.65rem;">Best: {{ best_signal }}</span>
+</div>
+
+{% if results %}
+<div style="overflow-x: auto;">
+<table class="data-table" style="width: 100%; font-size: 0.8rem; border-collapse: collapse;">
+    <thead>
+        <tr style="border-bottom: 2px solid #333;">
+            <th style="text-align: left; padding: 6px;">Signal</th>
+            <th>Precision</th>
+            <th>Recall</th>
+            <th>F1</th>
+            <th>Lead (days)</th>
+            <th>FPR</th>
+            <th>Strategy Return</th>
+            <th>Buy&Hold</th>
+            <th>DD Avoided</th>
+            <th>Sharpe</th>
+        </tr>
+    </thead>
+    <tbody>
+    {% for r in results %}
+        <tr style="border-bottom: 1px solid #222; {% if r.signal_name == best_signal %}background: rgba(37, 99, 235, 0.1);{% endif %}">
+            <td style="padding: 6px; font-weight: {% if r.signal_name == best_signal %}bold{% else %}normal{% endif %};">
+                {{ r.signal_name }}
+            </td>
+            <td style="text-align: center;">{{ "%.0f" | format(r.precision * 100) }}%</td>
+            <td style="text-align: center;">{{ "%.0f" | format(r.recall * 100) }}%</td>
+            <td style="text-align: center; font-weight: bold;">{{ "%.2f" | format(r.f1_score) }}</td>
+            <td style="text-align: center;">{{ "%.1f" | format(r.lead_time_days) }}</td>
+            <td style="text-align: center;">{{ "%.0f" | format(r.false_positive_rate * 100) }}%</td>
+            <td style="text-align: center; color: {% if r.strategy_return > 0 %}#22c55e{% else %}#ef4444{% endif %};">
+                {{ "%.1f" | format(r.strategy_return * 100) }}%
+            </td>
+            <td style="text-align: center; color: {% if r.buy_hold_return > 0 %}#22c55e{% else %}#ef4444{% endif %};">
+                {{ "%.1f" | format(r.buy_hold_return * 100) }}%
+            </td>
+            <td style="text-align: center; color: {% if r.max_drawdown_avoided > 0 %}#22c55e{% else %}#6b7280{% endif %};">
+                {{ "%.1f" | format(r.max_drawdown_avoided * 100) }}%
+            </td>
+            <td style="text-align: center;">{{ "%.2f" | format(r.sharpe_ratio) }}</td>
+        </tr>
+    {% endfor %}
+    </tbody>
+</table>
+</div>
+<p style="font-size: 0.7rem; color: #888; margin-top: 8px;">{{ summary }}</p>
+{% else %}
+<p style="color: #888; padding: 16px;">Benchmark computing... Results appear after startup analysis completes.</p>
+{% endif %}
