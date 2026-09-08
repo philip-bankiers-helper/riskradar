@@ -533,10 +533,10 @@ def test_threshold_calibration():
 
     # Apply new thresholds
     new_thresholds = {
-        "cool": 0.55,
-        "warm": 0.75,
-        "hot": 0.85,
-        "critical": 0.93,
+        "cool": 0.4636,
+        "warm": 0.6732,
+        "hot": 0.8029,
+        "critical": 0.8781,
     }
 
     cool_count = sum(1 for s in scores if s < new_thresholds["cool"])
@@ -552,11 +552,11 @@ def test_threshold_calibration():
     emergency_pct = emergency_count / total * 100
 
     print(f"  Distribution with new thresholds (n={total}):")
-    print(f"    Cool (<0.55):     {cool_count:4d} ({cool_pct:.1f}%) — target ~50%")
-    print(f"    Warm (0.55-0.75): {warm_count:4d} ({warm_pct:.1f}%) — target ~25%")
-    print(f"    Hot (0.75-0.85):  {hot_count:4d} ({hot_pct:.1f}%) — target ~15%")
-    print(f"    Critical (0.85-0.93): {critical_count:4d} ({critical_pct:.1f}%) — target ~5-8%")
-    print(f"    Emergency (>0.93): {emergency_count:4d} ({emergency_pct:.1f}%) — target ~2-3%")
+    print(f"    Cool (<0.4636): {cool_count:4d} ({cool_pct:.1f}%) — target 50%")
+    print(f"    Warm (<0.6732): {warm_count:4d} ({warm_pct:.1f}%) — target 25%")
+    print(f"    Hot (<0.8029): {hot_count:4d} ({hot_pct:.1f}%) — target 15%")
+    print(f"    Critical (<0.8781): {critical_count:4d} ({critical_pct:.1f}%) — target 7%")
+    print(f"    Emergency: {emergency_count:4d} ({emergency_pct:.1f}%) — target 3%")
 
     record(
         "Cool ~40-60% of days",

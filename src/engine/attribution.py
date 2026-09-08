@@ -22,6 +22,16 @@ logger = logging.getLogger(__name__)
 class PositionAttributor:
     """Decompose portfolio heat score into per-position contributions."""
 
+    def __init__(
+        self,
+        threshold_warm: float = 0.4636,
+        threshold_hot: float = 0.6732,
+        threshold_critical: float = 0.8029,
+    ):
+        self.threshold_warm = threshold_warm
+        self.threshold_hot = threshold_hot
+        self.threshold_critical = threshold_critical
+
     def compute_attribution(
         self,
         positions: list,
@@ -238,7 +248,7 @@ class PositionAttributor:
         if w_sum == 0:
             return {s: 1.0 / max(len(symbols), 1) for s in symbols}
 
-        cov = returns[available].cov().values
+        cov = returns[available].cov().values.copy()
         # Regularize
         cov += np.eye(n) * 1e-10
 
@@ -261,8 +271,8 @@ class PositionAttributor:
 
         return contributions
 
-    @staticmethod
     def _recommend(
+        self,
         heat_share: float,
         corr_contribution: float,
         factor_contribution: float,
@@ -272,21 +282,21 @@ class PositionAttributor:
     ) -> tuple[str, str]:
         """Generate recommendation for a position."""
         # High heat + high contribution = reduce
-        if heat_score >= 0.85 and heat_share > 0.15:
+        if heat_score >= self.threshold_critical and heat_share > 0.15:
             return "reduce", f"Top risk contributor ({heat_share:.0%} of heat) during critical conditions"
-        if heat_score >= 0.75 and heat_share > 0.20:
+        if heat_score >= self.threshold_hot and heat_share > 0.20:
             return "reduce", f"Large heat share ({heat_share:.0%}) in hot conditions"
 
         # High correlation contribution = hedge
-        if corr_contribution > 0.25 and heat_score >= 0.55:
+        if corr_contribution > 0.25 and heat_score >= self.threshold_warm:
             return "hedge", f"High correlation contribution ({corr_contribution:.0%}) driving portfolio risk"
 
         # High factor concentration = hedge
-        if factor_contribution > 0.25 and heat_score >= 0.55:
+        if factor_contribution > 0.25 and heat_score >= self.threshold_warm:
             return "hedge", f"Concentrated factor exposure ({factor_contribution:.0%} of factor HHI)"
 
         # Default: hold in cool conditions
-        if heat_score < 0.55:
+        if heat_score < self.threshold_warm:
             return "hold", "Normal conditions, no action needed"
 
         # Overweight + high risk contribution = monitor

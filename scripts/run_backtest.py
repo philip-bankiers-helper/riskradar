@@ -17,13 +17,84 @@ import numpy as np
 import pandas as pd
 
 from src.engine.backtest import BacktestEngine, CRISIS_EVENTS
+from src.engine.benchmark import SignalBenchmark
 from src.engine.correlation import CorrelationEngine
 from src.engine.heat_score import HeatScoreCalculator
 from src.engine.crowding import CrowdingEngine
+from src.engine.factor_model import FactorModel
+from src.config import DEFAULT_FACTOR_ETFS
 
 
 POSITION_SYMBOLS = ["NVDA", "AAPL", "MSFT", "AMZN", "GOOGL", "META", "TSLA", "AMD", "AVGO"]
 FACTOR_SYMBOLS = ["TLT", "HYG", "UUP", "SMH", "QUAL", "MTUM", "SPY", "USMV", "VTV"]
+THRESHOLD_QUANTILES = {
+    "warm": 0.50,
+    "hot": 0.75,
+    "critical": 0.90,
+    "emergency": 0.97,
+}
+
+
+def derive_thresholds(results: list[dict]) -> dict[str, float]:
+    """Derive alert cutoffs from fixed quantiles of the regenerated score distribution."""
+    scores = pd.Series([row["heat_score"] for row in results], dtype=float)
+    if scores.empty:
+        raise ValueError("Cannot derive thresholds from an empty backtest")
+    return {
+        level: round(float(scores.quantile(quantile)), 4)
+        for level, quantile in THRESHOLD_QUANTILES.items()
+    }
+
+
+def classify_score(score: float, thresholds: dict[str, float]) -> str:
+    """Classify a score using the derived thresholds without changing tier semantics."""
+    if score >= thresholds["emergency"]:
+        return "emergency"
+    if score >= thresholds["critical"]:
+        return "critical"
+    if score >= thresholds["hot"]:
+        return "hot"
+    if score >= thresholds["warm"]:
+        return "warm"
+    return "cool"
+
+
+def fetch_with_backoff(engine: BacktestEngine, attempts: int = 4) -> pd.DataFrame:
+    """Fetch the real yfinance dataset, backing off on empty or failed responses."""
+    last_error: Exception | None = None
+    for attempt in range(1, attempts + 1):
+        try:
+            returns = engine.fetch_historical_data(start_date="2019-01-01")
+            missing = sorted(set(POSITION_SYMBOLS + FACTOR_SYMBOLS) - set(returns.columns))
+            if returns.empty or missing:
+                raise RuntimeError(f"incomplete yfinance response; missing={missing}")
+            return returns
+        except Exception as exc:
+            last_error = exc
+            if attempt == attempts:
+                break
+            delay = 2 ** attempt
+            print(f"yfinance fetch attempt {attempt}/{attempts} failed; retrying in {delay}s")
+            time.sleep(delay)
+    raise RuntimeError(f"yfinance data fetch failed after {attempts} attempts: {last_error}")
+
+
+def fetch_vix_with_backoff(
+    benchmark: SignalBenchmark,
+    start: pd.Timestamp,
+    end: pd.Timestamp,
+    attempts: int = 4,
+) -> pd.Series:
+    """Fetch VIX history with bounded backoff; never substitute synthetic data."""
+    for attempt in range(1, attempts + 1):
+        vix = benchmark._fetch_vix(start, end + pd.Timedelta(days=1))
+        if vix is not None and not vix.empty:
+            return vix
+        if attempt < attempts:
+            delay = 2 ** attempt
+            print(f"VIX fetch attempt {attempt}/{attempts} failed; retrying in {delay}s")
+            time.sleep(delay)
+    raise RuntimeError(f"VIX yfinance fetch failed after {attempts} attempts")
 
 
 def run_full_rolling_backtest(returns: pd.DataFrame) -> dict:
@@ -53,10 +124,13 @@ def run_full_rolling_backtest(returns: pd.DataFrame) -> dict:
     corr_engine = CorrelationEngine(ewma_span=60)
     heat_calc = HeatScoreCalculator()
     crowding_engine = CrowdingEngine(lookback=60)
+    factor_model = FactorModel(factor_etfs=DEFAULT_FACTOR_ETFS, rolling_window=60)
+    weights_dict = dict(zip(pos_cols, equal_weights, strict=True))
     
     # Rolling computation
     window = 60
     results = []
+    errors: list[tuple[str, str]] = []
     
     print(f"Running rolling {window}-day heat score computation...")
     start_time = time.time()
@@ -71,20 +145,26 @@ def run_full_rolling_backtest(returns: pd.DataFrame) -> dict:
             corr = corr_engine.compute_correlation_matrix(pos_window)
             avg_corr = corr_engine.compute_avg_correlation(corr)
             sym_a, sym_b, top_corr = corr_engine.get_top_correlated_pair(corr)
+
+            # Match the live path: rolling OLS betas, aggregated to portfolio exposures.
+            exposures = factor_model.estimate_exposures(pos_window, fac_window)
+            summaries = factor_model.aggregate_exposures(exposures, weights_dict)
+            factor_exposures = {
+                summary.factor_name: summary.total_exposure for summary in summaries
+            }
             
             # Heat score
             heat = heat_calc.compute(
                 returns=pos_window,
                 portfolio_weights=equal_weights,
-                factor_exposures={},
+                factor_exposures=factor_exposures,
                 avg_correlation=avg_corr,
             )
             
-            # Crowding (simplified — no factor exposures in backtest)
             crowding = crowding_engine.compute_crowding(
                 position_returns=pos_window,
                 factor_returns=fac_window,
-                factor_exposures={},
+                factor_exposures=factor_exposures,
                 avg_correlation=avg_corr,
             )
             
@@ -98,6 +178,7 @@ def run_full_rolling_backtest(returns: pd.DataFrame) -> dict:
                 "div_ratio": round(heat.components.diversification_ratio, 4),
                 "div_ratio_pct": round(heat.components.diversification_percentile, 4),
                 "factor_hhi": round(heat.components.factor_hhi, 4),
+                "factor_hhi_pct": round(heat.components.factor_hhi_percentile, 4),
                 "avg_corr": round(avg_corr, 4),
                 "avg_corr_pct": round(heat.components.avg_correlation_percentile, 4),
                 "top_pair": f"{sym_a}-{sym_b}" if sym_a else "",
@@ -108,17 +189,27 @@ def run_full_rolling_backtest(returns: pd.DataFrame) -> dict:
             })
             
         except Exception as e:
+            errors.append((str(date.date()), str(e)))
             if i % 100 == 0:
                 print(f"  Error at {date}: {e}")
     
     elapsed = time.time() - start_time
     print(f"Computed {len(results)} daily observations in {elapsed:.1f}s")
     print()
+
+    if errors:
+        first_date, first_error = errors[0]
+        raise RuntimeError(
+            f"rolling backtest dropped {len(errors)} observations; "
+            f"first error at {first_date}: {first_error}"
+        )
     
     return results
 
 
-def analyze_crisis_performance(results: list[dict], crisis_events: list) -> list[dict]:
+def analyze_crisis_performance(
+    results: list[dict], crisis_events: list, thresholds: dict[str, float]
+) -> list[dict]:
     """Analyze heat score behavior around each crisis."""
     df = pd.DataFrame(results)
     df["date"] = pd.to_datetime(df["date"])
@@ -175,7 +266,7 @@ def analyze_crisis_performance(results: list[dict], crisis_events: list) -> list
             
             # Early warning: first day heat crosses warm BEFORE the peak
             pre_peak = during[during["date"] < peak]
-            warm_days = pre_peak[pre_peak["heat_score"] >= 0.4]
+            warm_days = pre_peak[pre_peak["heat_score"] >= thresholds["warm"]]
             if not warm_days.empty:
                 first_warm = warm_days.iloc[0]["date"]
                 days_before_peak = (peak - first_warm).days
@@ -186,7 +277,7 @@ def analyze_crisis_performance(results: list[dict], crisis_events: list) -> list
                 analysis["first_warm_date"] = None
                 
             # First day heat crosses hot
-            hot_days = pre_peak[pre_peak["heat_score"] >= 0.6]
+            hot_days = pre_peak[pre_peak["heat_score"] >= thresholds["hot"]]
             if not hot_days.empty:
                 first_hot = hot_days.iloc[0]["date"]
                 days_before_peak_hot = (peak - first_hot).days
@@ -206,8 +297,8 @@ def analyze_crisis_performance(results: list[dict], crisis_events: list) -> list
         if analysis.get("during_heat_avg") is not None and analysis.get("pre_heat_avg") is not None:
             heat_increase = analysis["during_heat_avg"] - analysis["pre_heat_avg"]
             analysis["heat_increase"] = round(heat_increase, 4)
-            analysis["detected"] = analysis["during_heat_max"] >= 0.6  # At least "hot"
-            analysis["strong_signal"] = analysis["during_heat_max"] >= 0.7  # "critical"
+            analysis["detected"] = analysis["during_heat_max"] >= thresholds["hot"]
+            analysis["strong_signal"] = analysis["during_heat_max"] >= thresholds["critical"]
         else:
             analysis["detected"] = False
             analysis["strong_signal"] = False
@@ -250,6 +341,8 @@ def compute_signal_stats(results: list[dict]) -> dict:
             "absorption_ratio": round(float(df["absorption_ratio"].mean()), 4),
             "turbulence_pct": round(float(df["turbulence_pct"].mean()), 4),
             "div_ratio_pct": round(float(df["div_ratio_pct"].mean()), 4),
+            "factor_hhi": round(float(df["factor_hhi"].mean()), 4),
+            "factor_hhi_pct": round(float(df["factor_hhi_pct"].mean()), 4),
             "avg_corr_pct": round(float(df["avg_corr_pct"].mean()), 4),
         },
     }
@@ -328,11 +421,18 @@ def main():
     )
     
     print("Fetching historical data from yfinance (2019-01-01 to present)...")
-    returns = engine.fetch_historical_data(start_date="2019-01-01")
+    returns = fetch_with_backoff(engine)
+    fixture_path = Path(__file__).parent.parent / "fixtures" / "yfinance_returns_sample.csv"
+    if not fixture_path.exists():
+        returns.iloc[-65:].to_csv(fixture_path, index_label="date")
+        print(f"Wrote frozen yfinance fixture: {fixture_path}")
     print()
     
     # 2. Run rolling backtest
     results = run_full_rolling_backtest(returns)
+    thresholds = derive_thresholds(results)
+    for row in results:
+        row["heat_level"] = classify_score(row["heat_score"], thresholds)
     
     # 3. Analyze crisis performance
     print("=" * 70)
@@ -340,7 +440,7 @@ def main():
     print("=" * 70)
     print()
     
-    crisis_analysis = analyze_crisis_performance(results, CRISIS_EVENTS)
+    crisis_analysis = analyze_crisis_performance(results, CRISIS_EVENTS, thresholds)
     
     for ca in crisis_analysis:
         print(f"📌 {ca['crisis']} ({ca['period']})")
@@ -401,6 +501,19 @@ def main():
     print()
     
     fwd_analysis = compute_forward_returns_analysis(results, returns)
+
+    # Benchmark all signals on the same real return/VIX dates used by this run.
+    portfolio_returns = returns[POSITION_SYMBOLS].mean(axis=1)
+    benchmark_engine = SignalBenchmark(heat_threshold=thresholds["warm"])
+    vix = fetch_vix_with_backoff(
+        benchmark_engine, pd.Timestamp(results[0]["date"]), pd.Timestamp(results[-1]["date"])
+    )
+    benchmark_report = benchmark_engine.run_comparison(
+        results,
+        vix_history=vix,
+        portfolio_returns=portfolio_returns,
+        correlation_history=[row["avg_corr"] for row in results],
+    )
     
     print(f"{'Level':12s} {'N':>6s} {'Fwd 1d':>10s} {'Fwd 5d':>10s} {'Fwd 10d':>10s} {'Fwd 20d':>10s} {'%Neg 5d':>8s} {'%Neg 20d':>8s}")
     print("-" * 78)
@@ -424,9 +537,16 @@ def main():
     
     # 6. Save full results
     output = {
+        "calibration": {
+            "method": "score quantiles",
+            "quantiles": THRESHOLD_QUANTILES,
+            "thresholds": thresholds,
+            "factor_hhi_nonzero_days": sum(row["factor_hhi"] > 0 for row in results),
+        },
         "crisis_analysis": crisis_analysis,
         "signal_stats": stats,
         "forward_returns": fwd_analysis,
+        "benchmark": benchmark_report.model_dump(mode="json"),
     }
     
     output_path = Path(__file__).parent.parent / "data" / "backtest_results.json"
@@ -440,6 +560,12 @@ def main():
     with open(ts_path, "w") as f:
         json.dump(results, f, indent=2)
     print(f"Heat score time series saved to: {ts_path}")
+    print(f"Derived thresholds: {thresholds}")
+    print(
+        "Non-zero factor HHI observations: "
+        f"{output['calibration']['factor_hhi_nonzero_days']}/{len(results)}"
+    )
+    print(f"Best benchmark F1: {benchmark_report.best_signal}")
     
     # Verdict
     print()

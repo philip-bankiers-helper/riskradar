@@ -63,7 +63,7 @@ class TestHeatScoreCalculator:
         assert calculator._classify(0.2) == HeatLevel.COOL
         assert calculator._classify(0.60) == HeatLevel.WARM
         assert calculator._classify(0.80) == HeatLevel.HOT
-        assert calculator._classify(0.90) == HeatLevel.CRITICAL
+        assert calculator._classify(0.84) == HeatLevel.CRITICAL
         assert calculator._classify(0.95) == HeatLevel.EMERGENCY
 
     def test_components_populated(self, calculator, sample_returns):

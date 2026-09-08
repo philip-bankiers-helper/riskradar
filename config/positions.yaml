@@ -1,0 +1,21 @@
+# SAMPLE HOLDINGS ONLY — replace with Philip's real holdings during W2.
+# Weights should sum to approximately 1.0.
+portfolio_positions:
+  - symbol: NVDA
+    weight: 0.20
+  - symbol: AAPL
+    weight: 0.15
+  - symbol: MSFT
+    weight: 0.15
+  - symbol: AMZN
+    weight: 0.10
+  - symbol: GOOGL
+    weight: 0.10
+  - symbol: META
+    weight: 0.10
+  - symbol: TSLA
+    weight: 0.10
+  - symbol: AMD
+    weight: 0.05
+  - symbol: AVGO
+    weight: 0.05

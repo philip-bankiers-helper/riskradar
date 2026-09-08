@@ -1,33 +1,6 @@
 # Risk Radar Configuration
-# Copy to config/settings.yaml and fill in your API keys
-
-# API Keys (or set via env vars: RISKRADAR_POLYGON_API_KEY, etc.)
-polygon_api_key: ""
-fred_api_key: ""
-telegram_bot_token: ""
-telegram_chat_id: ""
-
-# Portfolio Positions (symbol + weight)
-# Weights should sum to ~1.0
-portfolio_positions:
-  - symbol: NVDA
-    weight: 0.20
-  - symbol: AAPL
-    weight: 0.15
-  - symbol: MSFT
-    weight: 0.15
-  - symbol: AMZN
-    weight: 0.10
-  - symbol: GOOGL
-    weight: 0.10
-  - symbol: META
-    weight: 0.10
-  - symbol: TSLA
-    weight: 0.10
-  - symbol: AMD
-    weight: 0.05
-  - symbol: AVGO
-    weight: 0.05
+# Non-secret application settings only. Credentials and Telegram routing are
+# loaded from environment variables listed in .env.example.
 
 # Factor ETFs
 factor_etfs:
@@ -72,11 +45,11 @@ heat_weight_diversification: 0.20
 heat_weight_factor_hhi: 0.15
 heat_weight_avg_correlation: 0.20
 
-# Alert Thresholds (calibrated from backtest: mean=0.565, std=0.210)
-heat_threshold_warm: 0.55
-heat_threshold_hot: 0.75
-heat_threshold_critical: 0.85
-heat_threshold_emergency: 0.93
+# Alert thresholds from scripts/run_backtest.py (2019-04-01 through 2026-09-04)
+heat_threshold_warm: 0.4636
+heat_threshold_hot: 0.6732
+heat_threshold_critical: 0.8029
+heat_threshold_emergency: 0.8781
 
 # Data Pipeline
 data_source_priority:
@@ -98,5 +71,5 @@ duckdb_path: "data/riskradar.duckdb"
 redis_url: "redis://localhost:6379"
 
 # Server
-host: "0.0.0.0"
+host: "127.0.0.1"
 port: 8000

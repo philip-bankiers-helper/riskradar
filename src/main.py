@@ -6,7 +6,7 @@ import asyncio
 import logging
 import sys
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import numpy as np
@@ -110,8 +110,17 @@ async def compute_heat_loop(settings: Settings) -> None:
     )
     causal_engine = CausalDAGEngine(use_prior=True, min_observations=60)
     crowding_engine = CrowdingEngine(lookback=60)
-    position_attributor = PositionAttributor()
-    recommendation_engine = TradeRecommendationEngine()
+    position_attributor = PositionAttributor(
+        threshold_warm=settings.heat_threshold_warm,
+        threshold_hot=settings.heat_threshold_hot,
+        threshold_critical=settings.heat_threshold_critical,
+    )
+    recommendation_engine = TradeRecommendationEngine(
+        threshold_warm=settings.heat_threshold_warm,
+        threshold_hot=settings.heat_threshold_hot,
+        threshold_critical=settings.heat_threshold_critical,
+        threshold_emergency=settings.heat_threshold_emergency,
+    )
     state["risk_throttle"] = risk_throttle
     state["causal_engine"] = causal_engine
     state["crowding_engine"] = crowding_engine
@@ -146,6 +155,7 @@ async def compute_heat_loop(settings: Settings) -> None:
     alert_manager = AlertManager(
         telegram_bot_token=settings.telegram_bot_token,
         telegram_chat_id=settings.telegram_chat_id,
+        telegram_thread_id=settings.telegram_thread_id,
         cooldown_minutes=alert_cooldowns,
     )
     state["alert_manager"] = alert_manager
@@ -532,6 +542,14 @@ async def lifespan(app: FastAPI):
     logger.info("Risk Radar shut down.")
 
 
+def _next_daily_summary_target(now: datetime) -> datetime:
+    """Return the next 16:30 target in the timezone carried by ``now``."""
+    target = now.replace(hour=16, minute=30, second=0, microsecond=0)
+    if now >= target:
+        target += timedelta(days=1)
+    return target
+
+
 async def _daily_summary_scheduler(app_state: dict) -> None:
     """Schedule daily summary at 16:30 ET (after market close)."""
     from zoneinfo import ZoneInfo
@@ -540,10 +558,7 @@ async def _daily_summary_scheduler(app_state: dict) -> None:
     while True:
         try:
             now = datetime.now(et)
-            # Target: 16:30 ET today or tomorrow
-            target = now.replace(hour=16, minute=30, second=0, microsecond=0)
-            if now >= target:
-                target += timedelta(days=1)
+            target = _next_daily_summary_target(now)
 
             wait_seconds = (target - now).total_seconds()
             logger.info("Daily summary scheduled in %.0f seconds (at %s ET)", wait_seconds, target.strftime("%H:%M"))

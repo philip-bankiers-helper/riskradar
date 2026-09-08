@@ -38,9 +38,17 @@ class TradeRecommendationEngine:
         self,
         max_single_reduction: float = 0.10,
         min_action_threshold: float = 0.10,
+        threshold_warm: float = 0.4636,
+        threshold_hot: float = 0.6732,
+        threshold_critical: float = 0.8029,
+        threshold_emergency: float = 0.8781,
     ):
         self.max_single_reduction = max_single_reduction
         self.min_action_threshold = min_action_threshold
+        self.threshold_warm = threshold_warm
+        self.threshold_hot = threshold_hot
+        self.threshold_critical = threshold_critical
+        self.threshold_emergency = threshold_emergency
 
     def generate_recommendations(
         self,
@@ -79,11 +87,11 @@ class TradeRecommendationEngine:
         total_heat_reduction = 0.0
 
         # Determine urgency based on heat level
-        if heat_score >= 0.93:
+        if heat_score >= self.threshold_emergency:
             base_urgency = "immediate"
-        elif heat_score >= 0.85:
+        elif heat_score >= self.threshold_critical:
             base_urgency = "today"
-        elif heat_score >= 0.75:
+        elif heat_score >= self.threshold_hot:
             base_urgency = "this_week"
         else:
             base_urgency = "optional"
@@ -147,7 +155,7 @@ class TradeRecommendationEngine:
                     priority += 1
 
         # 2. HRP rebalance suggestions (if heat is elevated and HRP differs significantly)
-        if heat_score >= 0.55 and hrp:
+        if heat_score >= self.threshold_warm and hrp:
             for sym, hrp_w in hrp.items():
                 current_w = weights_dict.get(sym, 0.0)
                 diff = hrp_w - current_w

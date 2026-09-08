@@ -9,6 +9,9 @@ import httpx
 from src.models import HeatLevel, HeatScore
 
 logger = logging.getLogger(__name__)
+# Never allow credential-bearing Bot API URLs into application logs.
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 HEAT_EMOJI = {
     HeatLevel.COOL: "🟢",
@@ -22,9 +25,10 @@ HEAT_EMOJI = {
 class TelegramAlerter:
     """Send alerts via Telegram Bot API."""
 
-    def __init__(self, bot_token: str, chat_id: str):
+    def __init__(self, bot_token: str, chat_id: str, thread_id: int | None = None):
         self.bot_token = bot_token
         self.chat_id = chat_id
+        self.thread_id = thread_id
         self._base_url = f"https://api.telegram.org/bot{bot_token}"
         self._last_level: HeatLevel | None = None
 
@@ -71,13 +75,17 @@ class TelegramAlerter:
 
         try:
             async with httpx.AsyncClient() as client:
+                payload = {
+                    "chat_id": self.chat_id,
+                    "text": message,
+                    "parse_mode": "HTML",
+                }
+                if self.thread_id is not None:
+                    payload["message_thread_id"] = self.thread_id
+
                 resp = await client.post(
                     f"{self._base_url}/sendMessage",
-                    json={
-                        "chat_id": self.chat_id,
-                        "text": message,
-                        "parse_mode": "HTML",
-                    },
+                    json=payload,
                     timeout=10.0,
                 )
                 if resp.status_code == 200:

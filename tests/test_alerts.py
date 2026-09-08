@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -381,6 +381,27 @@ class TestDailySummary:
             recommendations=None,
         )
         assert result is False
+
+    @pytest.mark.asyncio
+    async def test_telegram_send_targets_configured_topic(self):
+        mgr = AlertManager(
+            telegram_bot_token="synthetic-token",
+            telegram_chat_id="-100123",
+            telegram_thread_id=456,
+        )
+        response = MagicMock()
+        response.status_code = 200
+        response.json.return_value = {"ok": True, "result": {"message_id": 789}}
+
+        with patch("src.alerts.alert_manager.httpx.AsyncClient") as client_class:
+            client = client_class.return_value.__aenter__.return_value
+            client.post = AsyncMock(return_value=response)
+            assert await mgr._send_telegram("summary") is True
+
+        payload = client.post.call_args.kwargs["json"]
+        assert payload["chat_id"] == "-100123"
+        assert payload["message_thread_id"] == 456
+        assert mgr.last_message_id == 789
 
 
 # ── Alert History Tests ──

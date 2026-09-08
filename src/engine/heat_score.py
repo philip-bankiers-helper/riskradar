@@ -42,10 +42,10 @@ class HeatScoreCalculator:
         weight_dr: float = 0.20,
         weight_hhi: float = 0.15,
         weight_corr: float = 0.20,
-        threshold_warm: float = 0.55,
-        threshold_hot: float = 0.75,
-        threshold_critical: float = 0.85,
-        threshold_emergency: float = 0.93,
+        threshold_warm: float = 0.4636,
+        threshold_hot: float = 0.6732,
+        threshold_critical: float = 0.8029,
+        threshold_emergency: float = 0.8781,
     ):
         self.weights = {
             "ar": weight_ar,

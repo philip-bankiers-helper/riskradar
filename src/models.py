@@ -10,11 +10,11 @@ from pydantic import BaseModel, Field
 
 class HeatLevel(str, Enum):
     """Heat score threshold classification."""
-    COOL = "cool"           # 0.0 - 0.55  (~50% of days)
-    WARM = "warm"           # 0.55 - 0.75 (~25% of days)
-    HOT = "hot"             # 0.75 - 0.85 (~15% of days)
-    CRITICAL = "critical"   # 0.85 - 0.93 (~5-8% of days)
-    EMERGENCY = "emergency" # 0.93+       (~2-3% of days)
+    COOL = "cool"           # below 0.4636 (50% of calibration days)
+    WARM = "warm"           # 0.4636 to 0.6732 (25%)
+    HOT = "hot"             # 0.6732 to 0.8029 (15%)
+    CRITICAL = "critical"   # 0.8029 to 0.8781 (7%)
+    EMERGENCY = "emergency" # 0.8781 and above (3%)
 
 
 class Position(BaseModel):

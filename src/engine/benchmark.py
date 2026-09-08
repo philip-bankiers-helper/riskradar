@@ -27,7 +27,7 @@ class SignalBenchmark:
 
     def __init__(
         self,
-        heat_threshold: float = 0.55,
+        heat_threshold: float = 0.4636,
         vix_threshold: float = 25.0,
         ma_window: int = 50,
         correlation_threshold: float = 0.6,

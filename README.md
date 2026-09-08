@@ -25,18 +25,19 @@ RiskRadar detects hidden correlation clustering across portfolio positions *befo
 ### 1. Install
 
 ```bash
-git clone https://github.com/yourusername/riskradar.git
+git clone https://github.com/philip-bankiers-helper/riskradar.git
 cd riskradar
-python -m venv .venv
+python3.12 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements.lock
 ```
 
 ### 2. Configure
 
-Edit `config/settings.yaml`:
-- Set your portfolio positions and weights
-- (Optional) Add API keys for Polygon.io, FRED, Telegram
+1. Copy `.env.example` to `.env` and set only the environment values you use.
+2. Edit `config/positions.yaml`; its committed holdings are clearly marked SAMPLE.
+
+Never put API keys, bot tokens, or Telegram routing values in `settings.yaml`.
 
 ### 3. Run
 
@@ -87,42 +88,55 @@ Combines 5 components into a single [0, 1] risk metric:
 
 ### Calibrated Thresholds
 
-Thresholds are calibrated from 2019–2026 backtest data (1,749 trading days):
+`python scripts/run_backtest.py` generated every calibration and benchmark number
+below from 1,869 trading days (2019-04-01 through 2026-09-04). It computes the
+same rolling factor regressions as the live path: factor HHI is nonzero on
+1,869/1,869 rows, versus 0/1,749 in the invalid prior artifact. Thresholds are
+the 50th, 75th, 90th, and 97th percentiles of the regenerated score distribution.
 
 | Level | Range | % of Days | Action |
 |-------|-------|-----------|--------|
-| 🟢 Cool | < 0.55 | ~51% | Normal trading, full position sizes |
-| 🟡 Warm | 0.55–0.75 | ~23% | Alert; reduce new position sizes by 25% |
-| 🟠 Hot | 0.75–0.85 | ~15% | Reduce exposure 25%; no new correlated positions |
-| 🔴 Critical | 0.85–0.93 | ~7% | Reduce exposure 50%; hedge factor concentrations |
-| ⛔ Emergency | > 0.93 | ~3% | Halt new entries; actively reduce largest exposures |
+| 🟢 Cool | < 0.4636 | 50.0% | Normal trading, full position sizes |
+| 🟡 Warm | 0.4636–0.6732 | 25.0% | Alert; reduce new position sizes by 25% |
+| 🟠 Hot | 0.6732–0.8029 | 15.0% | Reduce exposure 25%; no new correlated positions |
+| 🔴 Critical | 0.8029–0.8781 | 7.0% | Reduce exposure 50%; hedge factor concentrations |
+| ⛔ Emergency | ≥ 0.8781 | 3.0% | Halt new entries; actively reduce largest exposures |
 
 ### Historical Validation
 
-Detected all 4 major crises in backtest:
-- **COVID Crash** (Feb–Apr 2020): 33 days early warning, heat peaked at 0.997
-- **2022 Bear Market**: 164 days early warning, heat 0.79 average during
-- **Aug 2024 Vol Spike**: 5 days early warning
-- **Jan 2026 Quant Blowup**: 11 days early warning
+The hot threshold detected 2 of 4 named crises. Warm-level timing and hot detection:
+
+| Event | First warm vs peak | Peak heat | Hot detected? |
+|-------|--------------------|-----------|---------------|
+| COVID Crash | 27 days | 0.9775 | Yes |
+| 2022 Bear Market | 163 days | 0.9757 | Yes |
+| Aug 2024 Vol Spike | 5 days | 0.5845 | **No** |
+| Jan 2026 Quant Blowup | 11 days | 0.5928 | **No** |
 
 ### Signal Benchmarking
 
-| Signal | F1 | Recall | Sharpe | Advantage |
-|--------|-----|--------|--------|-----------|
-| RiskRadar Heat | 0.166 | **60.7%** | 1.35 | Best recall, earliest warnings |
-| VIX > 25 | 0.178 | 31.1% | 1.75 | Better precision |
-| 50d MA Cross | **0.225** | 51.8% | **2.10** | Best risk-adjusted return |
+| Signal | F1 | Precision | Recall | Lead days | False-positive rate | Sharpe |
+|--------|----|-----------|--------|-----------|---------------------|--------|
+| RiskRadar Heat | 0.1576 | 9.09% | **59.03%** | **12.0** | 49.28% | 1.3272 |
+| VIX > 25 | 0.1755 | 12.43% | 29.86% | 10.1 | **17.57%** | 1.7993 |
+| 50-day MA Cross | **0.2123** | **13.52%** | 49.31% | 11.0 | 26.32% | **2.1642** |
 
-RiskRadar catches the most drawdowns (60.7% recall) with 11.9 days average lead time, but has higher false positive rate than simpler alternatives. Best used as an ensemble with VIX for confirmation.
+RiskRadar wins recall and lead time, but loses F1, precision, false-positive rate,
+and Sharpe to the 50-day MA; it also loses F1, precision, false-positive rate,
+and Sharpe to VIX. Treat it as an unproven ensemble input, not a superior standalone signal.
 
 ## Tests
 
 ```bash
-# Unit tests (212)
-pytest tests/ -v
+# Blocking tests (219 pass; network and holdout tests excluded by default)
+pytest -q
 
 # Battle tests (49 stress scenarios)
 python scripts/battle_test.py
+
+# Reproduce the empirical README tables
+python scripts/run_backtest.py
+python scripts/render_readme_metrics.py
 ```
 
 ## Tech Stack

@@ -104,7 +104,7 @@ class BacktestEngine:
         self,
         position_symbols: list[str] | None = None,
         factor_symbols: list[str] | None = None,
-        heat_threshold_warm: float = 0.4,
+        heat_threshold_warm: float = 0.4636,
     ):
         self.position_symbols = position_symbols or [
             "NVDA", "AAPL", "MSFT", "AMZN", "GOOGL",

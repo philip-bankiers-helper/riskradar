@@ -21,6 +21,9 @@ import httpx
 from src.models import HeatLevel, HeatScore, PositionAttribution, PortfolioRecommendation
 
 logger = logging.getLogger(__name__)
+# httpx's INFO request line includes the Bot API token in the URL.
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 HEAT_EMOJI = {
     HeatLevel.COOL: "\U0001f7e2",      # green circle
@@ -63,10 +66,13 @@ class AlertManager:
         self,
         telegram_bot_token: str = "",
         telegram_chat_id: str = "",
+        telegram_thread_id: int | None = None,
         cooldown_minutes: dict[str, int] | None = None,
     ):
         self.bot_token = telegram_bot_token
         self.chat_id = telegram_chat_id
+        self.thread_id = telegram_thread_id
+        self.last_message_id: int | None = None
         self._base_url = f"https://api.telegram.org/bot{telegram_bot_token}" if telegram_bot_token else ""
 
         # Cooldown tracking: tier -> last send timestamp
@@ -326,16 +332,22 @@ class AlertManager:
 
         try:
             async with httpx.AsyncClient() as client:
+                payload = {
+                    "chat_id": self.chat_id,
+                    "text": message,
+                    "parse_mode": "HTML",
+                }
+                if self.thread_id is not None:
+                    payload["message_thread_id"] = self.thread_id
+
                 resp = await client.post(
                     f"{self._base_url}/sendMessage",
-                    json={
-                        "chat_id": self.chat_id,
-                        "text": message,
-                        "parse_mode": "HTML",
-                    },
+                    json=payload,
                     timeout=10.0,
                 )
                 if resp.status_code == 200:
+                    body = resp.json()
+                    self.last_message_id = body.get("result", {}).get("message_id")
                     logger.info("Alert sent via Telegram")
                     return True
                 else:

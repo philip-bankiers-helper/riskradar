@@ -35,11 +35,11 @@ def heat_gauge_config(score: float, level: str) -> str:
                 "borderwidth": 1,
                 "bordercolor": "#333",
                 "steps": [
-                    {"range": [0, 0.4], "color": "rgba(0, 212, 170, 0.15)"},
-                    {"range": [0.4, 0.6], "color": "rgba(240, 173, 78, 0.15)"},
-                    {"range": [0.6, 0.7], "color": "rgba(255, 107, 53, 0.15)"},
-                    {"range": [0.7, 0.85], "color": "rgba(255, 45, 45, 0.15)"},
-                    {"range": [0.85, 1.0], "color": "rgba(255, 0, 64, 0.25)"},
+                    {"range": [0, 0.4636], "color": "rgba(0, 212, 170, 0.15)"},
+                    {"range": [0.4636, 0.6732], "color": "rgba(240, 173, 78, 0.15)"},
+                    {"range": [0.6732, 0.8029], "color": "rgba(255, 107, 53, 0.15)"},
+                    {"range": [0.8029, 0.8781], "color": "rgba(255, 45, 45, 0.15)"},
+                    {"range": [0.8781, 1.0], "color": "rgba(255, 0, 64, 0.25)"},
                 ],
                 "threshold": {
                     "line": {"color": "#fff", "width": 3},
