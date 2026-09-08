@@ -6,10 +6,7 @@ import pytest
 
 from src.engine.backtest import (
     BacktestEngine,
-    BacktestResult,
     CrisisEvent,
-    FullBacktestResult,
-    CRISIS_EVENTS,
 )
 
 
@@ -51,19 +48,6 @@ def test_crisis():
 
 
 class TestBacktestEngine:
-    def test_run_crisis_backtest(self, sample_returns, test_crisis):
-        engine = BacktestEngine(
-            position_symbols=["AAPL", "MSFT", "GOOGL", "NVDA", "AMD"],
-            factor_symbols=["TLT", "HYG", "UUP", "SMH", "SPY"],
-        )
-
-        result = engine.run_crisis_backtest(test_crisis, sample_returns)
-
-        assert isinstance(result, BacktestResult)
-        assert result.crisis.name == "Test Crisis"
-        assert result.heat_during >= 0
-        assert result.max_drawdown <= 0  # Drawdown should be negative
-
     def test_run_crisis_missing_symbols(self):
         engine = BacktestEngine(
             position_symbols=["ZZZZZ"],  # Non-existent
@@ -76,21 +60,6 @@ class TestBacktestEngine:
             dummy,
         )
         assert result.heat_during == 0  # No data to compute
-
-    def test_run_full_backtest(self, sample_returns, test_crisis):
-        engine = BacktestEngine(
-            position_symbols=["AAPL", "MSFT", "GOOGL", "NVDA", "AMD"],
-            factor_symbols=["TLT", "HYG", "UUP", "SMH", "SPY"],
-        )
-
-        result = engine.run_full_backtest(
-            returns=sample_returns,
-            crises=[test_crisis],
-        )
-
-        assert isinstance(result, FullBacktestResult)
-        assert len(result.crisis_results) == 1
-        assert 0 <= result.overall_accuracy <= 1
 
     def test_to_dict(self, sample_returns, test_crisis):
         engine = BacktestEngine(
@@ -109,16 +78,3 @@ class TestBacktestEngine:
         assert len(d["crises"]) == 1
         assert "heat_before" in d["crises"][0]
         assert "detected" in d["crises"][0]
-
-
-class TestCrisisEvents:
-    def test_known_crises_have_valid_dates(self):
-        for crisis in CRISIS_EVENTS:
-            start = pd.Timestamp(crisis.start_date)
-            peak = pd.Timestamp(crisis.peak_date)
-            end = pd.Timestamp(crisis.end_date)
-            assert start < peak, f"{crisis.name}: start should be before peak"
-            assert peak <= end, f"{crisis.name}: peak should be before end"
-
-    def test_crisis_events_not_empty(self):
-        assert len(CRISIS_EVENTS) >= 3

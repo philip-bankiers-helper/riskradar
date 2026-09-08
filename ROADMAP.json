@@ -1,0 +1,20 @@
+[
+  {
+    "id": "W1",
+    "title": "the number is real and it arrives",
+    "done_when": "7 consecutive dated 16:30 ET summaries from the launchd service; suite green",
+    "passes": false
+  },
+  {
+    "id": "W2",
+    "title": "it's about my portfolio",
+    "done_when": "holdings from config/positions.yaml drive the score; each summary carries top-3 attributions and one action; Philip taps yes/no",
+    "passes": false
+  },
+  {
+    "id": "W3",
+    "title": "prove the lead time",
+    "done_when": "weekly-regenerated scorecard: warning days vs VIX>25 and 50-day MA for every >=5% drawdown in 24 months, including losses",
+    "passes": false
+  }
+]

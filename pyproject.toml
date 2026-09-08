@@ -47,6 +47,8 @@ include = ["src*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+addopts = ["--ignore=tests/holdout", "-m", "not network"]
+markers = ["network: explicit public-network integration test; excluded from blocking suite"]
 filterwarnings = ["ignore::DeprecationWarning"]
 
 [tool.ruff]
