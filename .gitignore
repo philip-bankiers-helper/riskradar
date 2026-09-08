@@ -19,6 +19,7 @@ htmlcov/
 # Data (user-generated, may contain sensitive portfolio info)
 data/*.duckdb
 data/*.duckdb.wal
+data/delivery_log.jsonl
 
 # Environment / secrets
 .env

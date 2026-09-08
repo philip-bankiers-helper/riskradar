@@ -68,11 +68,13 @@ class AlertManager:
         telegram_chat_id: str = "",
         telegram_thread_id: int | None = None,
         cooldown_minutes: dict[str, int] | None = None,
+        delivery_log_path: str = "",
     ):
         self.bot_token = telegram_bot_token
         self.chat_id = telegram_chat_id
         self.thread_id = telegram_thread_id
         self.last_message_id: int | None = None
+        self.delivery_log_path = delivery_log_path
         self._base_url = f"https://api.telegram.org/bot{telegram_bot_token}" if telegram_bot_token else ""
 
         # Cooldown tracking: tier -> last send timestamp
@@ -173,9 +175,17 @@ class AlertManager:
         attribution: list[PositionAttribution] | None,
         recommendations: PortfolioRecommendation | None,
         data_quality: dict | None = None,
+        scheduled: bool = False,
     ) -> bool:
-        """Rich end-of-day summary."""
-        if self._is_on_cooldown(AlertTier.DAILY_SUMMARY):
+        """Rich end-of-day summary.
+
+        ``scheduled=True`` marks the launchd-driven 16:30 ET send. It
+        bypasses the manual-send cooldown (the scheduler fires at most
+        once per day by construction, and a stray manual test send must
+        never suppress the real delivery) and is recorded in the
+        delivery log as scheduled evidence for the W1 streak.
+        """
+        if not scheduled and self._is_on_cooldown(AlertTier.DAILY_SUMMARY):
             return False
 
         emoji = HEAT_EMOJI.get(heat_score.level, "?")
@@ -217,6 +227,16 @@ class AlertManager:
         if await self._send_telegram(msg):
             self._mark_sent(AlertTier.DAILY_SUMMARY)
             self._record_alert(AlertTier.DAILY_SUMMARY, heat_score.score)
+            if self.delivery_log_path:
+                from src.delivery_log import append_delivery
+
+                append_delivery(
+                    self.delivery_log_path,
+                    tier=AlertTier.DAILY_SUMMARY.value,
+                    message_id=self.last_message_id,
+                    heat_score=heat_score.score,
+                    scheduled=scheduled,
+                )
             return True
         return False
 

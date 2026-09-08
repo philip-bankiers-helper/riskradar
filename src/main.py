@@ -157,6 +157,7 @@ async def compute_heat_loop(settings: Settings) -> None:
         telegram_chat_id=settings.telegram_chat_id,
         telegram_thread_id=settings.telegram_thread_id,
         cooldown_minutes=alert_cooldowns,
+        delivery_log_path=settings.delivery_log_path,
     )
     state["alert_manager"] = alert_manager
 
@@ -568,14 +569,27 @@ async def _daily_summary_scheduler(app_state: dict) -> None:
             alert_manager = app_state.get("alert_manager")
             heat = app_state.get("last_heat_score")
             if alert_manager and heat:
-                await alert_manager.send_daily_summary(
+                sent = await alert_manager.send_daily_summary(
                     heat_score=heat,
                     regime_state=app_state.get("regime_state"),
                     attribution=app_state.get("attribution"),
                     recommendations=app_state.get("recommendations"),
                     data_quality=app_state.get("data_quality"),
+                    scheduled=True,
                 )
-                logger.info("Daily summary sent")
+                if sent:
+                    logger.info(
+                        "Daily summary sent (message_id=%s)",
+                        getattr(alert_manager, "last_message_id", None),
+                    )
+                else:
+                    logger.error("Daily summary FAILED to send at scheduled time")
+            else:
+                logger.error(
+                    "Daily summary skipped: alert_manager=%s heat=%s",
+                    alert_manager is not None,
+                    heat is not None,
+                )
 
         except asyncio.CancelledError:
             raise

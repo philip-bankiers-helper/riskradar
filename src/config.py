@@ -82,6 +82,7 @@ class Settings(BaseSettings):
 
     # Storage
     duckdb_path: str = str(PROJECT_ROOT / "data" / "riskradar.duckdb")
+    delivery_log_path: str = str(PROJECT_ROOT / "data" / "delivery_log.jsonl")
     redis_url: str = "redis://localhost:6379"
 
     # Server
