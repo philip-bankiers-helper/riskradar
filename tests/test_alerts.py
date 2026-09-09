@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import re
 import time
+from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from src.alerts.alert_manager import AlertManager, AlertTier, DEFAULT_COOLDOWNS
+from src.delivery_log import ET
 from src.models import (
     HeatLevel,
     HeatScore,
@@ -367,6 +370,29 @@ class TestDailySummary:
             assert "DAILY RISK SUMMARY" in msg
             assert "NVDA" in msg
             assert "yfinance" in msg
+
+    @pytest.mark.asyncio
+    async def test_daily_summary_header_is_et_dated(self):
+        """W1: header carries the America/New_York date, matching delivery-log day keys."""
+        mgr = AlertManager(telegram_bot_token="test", telegram_chat_id="123")
+        heat = _make_heat(0.65, HeatLevel.WARM)
+
+        with patch.object(mgr, "_send_telegram", new_callable=AsyncMock, return_value=True) as mock_send:
+            before = datetime.now(ET).date()
+            result = await mgr.send_daily_summary(
+                heat_score=heat,
+                regime_state=None,
+                attribution=None,
+                recommendations=None,
+            )
+            after = datetime.now(ET).date()
+
+            assert result is True
+            header = mock_send.call_args[0][0].splitlines()[1]
+            assert re.fullmatch(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2} ET", header)
+            stamped = datetime.strptime(header, "%Y-%m-%d %H:%M ET").date()
+            # Tolerate an ET-midnight rollover between the two clock reads.
+            assert stamped in {before, after}
 
     @pytest.mark.asyncio
     async def test_daily_summary_cooldown(self):

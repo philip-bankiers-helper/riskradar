@@ -18,6 +18,7 @@ from enum import Enum
 
 import httpx
 
+from src.delivery_log import ET
 from src.models import HeatLevel, HeatScore, PositionAttribution, PortfolioRecommendation
 
 logger = logging.getLogger(__name__)
@@ -194,7 +195,7 @@ class AlertManager:
         regime_conf = regime_state.get("confidence", 0) if regime_state else 0
 
         msg = f"""{emoji} <b>DAILY RISK SUMMARY</b>
-{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}
+{datetime.now(ET).strftime('%Y-%m-%d %H:%M ET')}
 
 <b>Heat Score:</b> {heat_score.score:.3f} ({heat_score.level.value.upper()})
 <b>Regime:</b> {regime.upper()} (confidence: {regime_conf:.0%})
