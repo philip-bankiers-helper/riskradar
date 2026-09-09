@@ -21,3 +21,11 @@ Entries are append-only.
 - Tests: 238 passed, 1 deselected (was 219). Floor check 244 vs baseline 225. Secrets scan clean.
 - Service restarted onto the new code ahead of the 16:30 ET slot (new PID, scheduler re-armed, port 8001 answering).
 - W1 waiting on: first scheduled delivery today 16:30 ET, then six more consecutive days. No input needed from Philip.
+
+## 2026-09-09 — W1 night 3
+
+- Verified yesterday's scheduled delivery independently: launchd service delivered the 16:30:00 ET summary for 2026-09-08 (message 4823, heat 0.561) to thread 4799; delivery log + scheduler log agree. Scheduled streak: 1 day; today 16:30 ET is day 2 of 7.
+- One step: daily-summary header now dates itself in America/New_York ("YYYY-MM-DD HH:MM ET") instead of UTC, matching delivery-log day keys so each delivered message is self-evidently a dated ET summary (W1 done_when wording).
+- Suite green before and after: 239 passed, 1 deselected (+1 new test). Floor 245 vs baseline 225. Secrets scan clean.
+- Deployed 6e6b596 to the service ahead of today's slot: new pid 42360, /health 200, scheduler re-armed for 16:30 ET. Pushed c92f835..6e6b596 to origin/main.
+- W1 waiting on: today's 16:30 ET delivery (day 2), then five more consecutive days. No input needed from Philip.
