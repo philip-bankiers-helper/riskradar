@@ -75,6 +75,7 @@ class AlertManager:
         self.chat_id = telegram_chat_id
         self.thread_id = telegram_thread_id
         self.last_message_id: int | None = None
+        self.last_telegram_date: int | None = None
         self.delivery_log_path = delivery_log_path
         self._base_url = f"https://api.telegram.org/bot{telegram_bot_token}" if telegram_bot_token else ""
 
@@ -237,6 +238,7 @@ class AlertManager:
                     message_id=self.last_message_id,
                     heat_score=heat_score.score,
                     scheduled=scheduled,
+                    telegram_date=self.last_telegram_date,
                 )
             return True
         return False
@@ -369,6 +371,7 @@ class AlertManager:
                 if resp.status_code == 200:
                     body = resp.json()
                     self.last_message_id = body.get("result", {}).get("message_id")
+                    self.last_telegram_date = body.get("result", {}).get("date")
                     logger.info("Alert sent via Telegram")
                     return True
                 else:

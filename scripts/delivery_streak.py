@@ -20,7 +20,11 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.delivery_log import daily_streak, read_deliveries  # noqa: E402
+from src.delivery_log import (  # noqa: E402
+    daily_streak,
+    read_deliveries,
+    verify_corroboration,
+)
 
 
 def main() -> int:
@@ -37,6 +41,7 @@ def main() -> int:
     ]
     scheduled = [r for r in records if r.get("scheduled")]
     last_scheduled = scheduled[-1] if scheduled else None
+    corroboration = verify_corroboration(records)
 
     print(
         json.dumps(
@@ -48,6 +53,7 @@ def main() -> int:
                 "scheduled_deliveries": len(scheduled),
                 "manual_deliveries": len(records) - len(scheduled),
                 "last_scheduled_message_id": (last_scheduled or {}).get("message_id"),
+                "corroboration": corroboration,
             }
         )
     )

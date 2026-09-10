@@ -429,6 +429,30 @@ class TestDailySummary:
         assert payload["message_thread_id"] == 456
         assert mgr.last_message_id == 789
 
+    @pytest.mark.asyncio
+    async def test_telegram_send_captures_server_date(self):
+        # Telegram echoes its own send timestamp; capturing it lets the
+        # delivery log corroborate the ET day with a second clock.
+        mgr = AlertManager(
+            telegram_bot_token="synthetic-token",
+            telegram_chat_id="-100123",
+            telegram_thread_id=456,
+        )
+        response = MagicMock()
+        response.status_code = 200
+        response.json.return_value = {
+            "ok": True,
+            "result": {"message_id": 790, "date": 1757361000},
+        }
+
+        with patch("src.alerts.alert_manager.httpx.AsyncClient") as client_class:
+            client = client_class.return_value.__aenter__.return_value
+            client.post = AsyncMock(return_value=response)
+            assert await mgr._send_telegram("summary") is True
+
+        assert mgr.last_message_id == 790
+        assert mgr.last_telegram_date == 1757361000
+
 
 # ── Alert History Tests ──
 

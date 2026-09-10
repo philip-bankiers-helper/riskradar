@@ -39,9 +39,16 @@ def append_delivery(
     message_id: int | None = None,
     heat_score: float | None = None,
     scheduled: bool = False,
+    telegram_date: int | None = None,
     now: datetime | None = None,
 ) -> bool:
-    """Append one delivery record. Never raises into the alert path."""
+    """Append one delivery record. Never raises into the alert path.
+
+    ``telegram_date`` is Telegram's server-side send timestamp (unix
+    seconds) echoed by the Bot API alongside ``message_id``. Storing
+    it makes each record self-corroborating: the ET day key can be
+    re-derived from Telegram's own clock, not just the local one.
+    """
     try:
         moment = _et_now(now)
         record = {
@@ -54,6 +61,7 @@ def append_delivery(
             "scheduled": bool(scheduled),
             "message_id": message_id,
             "heat_score": heat_score,
+            "telegram_date": telegram_date,
         }
         target = Path(path)
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -136,4 +144,56 @@ def daily_streak(
         "last_date": last.isoformat(),
         "live": live,
         "delivered_days": len(days),
+    }
+
+
+def verify_corroboration(records: list[dict]) -> dict:
+    """Cross-check each delivery record against Telegram's server clock.
+
+    For every daily-summary record that carries a ``telegram_date``
+    (unix seconds echoed by the Bot API at send time), re-derive the ET
+    calendar day and compare it to the locally recorded ``et_date``. A
+    match means two independent clocks (local and Telegram's server)
+    agree the summary was delivered on that ET day — evidence that does
+    not rely solely on the Mac Studio's clock.
+
+    Records without ``telegram_date`` (pre-feature history) are counted
+    as ``missing`` and excluded from the verdict.
+    """
+    checked = 0
+    corroborated = 0
+    missing = 0
+    mismatches: list[dict] = []
+
+    for rec in records:
+        if rec.get("tier") != DAILY_SUMMARY:
+            continue
+        tg_date = rec.get("telegram_date")
+        if tg_date is None:
+            missing += 1
+            continue
+        try:
+            tg_et_day = datetime.fromtimestamp(int(tg_date), tz=timezone.utc)
+            tg_et_day = tg_et_day.astimezone(ET).date().isoformat()
+        except (TypeError, ValueError, OSError, OverflowError):
+            missing += 1
+            continue
+        checked += 1
+        if tg_et_day == rec.get("et_date"):
+            corroborated += 1
+        else:
+            mismatches.append(
+                {
+                    "message_id": rec.get("message_id"),
+                    "et_date": rec.get("et_date"),
+                    "telegram_et_date": tg_et_day,
+                }
+            )
+
+    return {
+        "checked": checked,
+        "corroborated": corroborated,
+        "mismatched": len(mismatches),
+        "missing": missing,
+        "mismatches": mismatches,
     }

@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from src.alerts.alert_manager import AlertManager
-from src.delivery_log import append_delivery, daily_streak, read_deliveries
+from src.delivery_log import ET, append_delivery, daily_streak, read_deliveries, verify_corroboration
 from src.models import HeatLevel
 from tests.test_alerts import _make_attribution, _make_heat, _make_recommendations
 
@@ -259,3 +259,129 @@ class TestAlertManagerDeliveryLog:
                 recommendations=None,
             )
         assert sent is True
+
+    @pytest.mark.asyncio
+    async def test_send_persists_telegram_server_date(self, tmp_path):
+        # The delivery record must carry Telegram's own send timestamp so
+        # the ET day key is corroborated by a second, independent clock.
+        mgr = self._manager(tmp_path)
+
+        async def fake_send(message):
+            mgr.last_message_id = 5556
+            mgr.last_telegram_date = 1757361000
+            return True
+
+        with patch.object(mgr, "_send_telegram", new=fake_send):
+            sent = await mgr.send_daily_summary(
+                heat_score=_make_heat(0.5, HeatLevel.WARM),
+                regime_state=None,
+                attribution=None,
+                recommendations=None,
+                scheduled=True,
+            )
+        assert sent is True
+        records = read_deliveries(tmp_path / "delivery_log.jsonl")
+        assert records[0]["message_id"] == 5556
+        assert records[0]["telegram_date"] == 1757361000
+
+
+# ── Telegram server-clock corroboration ──
+
+
+def _tg_ts(day: date, hours_later: float = 0) -> int:
+    """Unix seconds of the 16:30 ET slot on *day*, optionally shifted."""
+    moment = ET_1630(day) + timedelta(hours=hours_later)
+    return int(moment.replace(tzinfo=ET).timestamp())
+
+
+class TestVerifyCorroboration:
+    def test_append_stores_telegram_date(self, tmp_path):
+        log = tmp_path / "log.jsonl"
+        append_delivery(
+            log,
+            tier="daily_summary",
+            message_id=4823,
+            scheduled=True,
+            telegram_date=_tg_ts(TODAY),
+            now=ET_1630(TODAY),
+        )
+        assert read_deliveries(log)[0]["telegram_date"] == _tg_ts(TODAY)
+
+    def test_append_without_telegram_date_records_null(self, tmp_path):
+        log = tmp_path / "log.jsonl"
+        append_delivery(
+            log,
+            tier="daily_summary",
+            message_id=1,
+            scheduled=True,
+            now=ET_1630(TODAY),
+        )
+        assert read_deliveries(log)[0]["telegram_date"] is None
+
+    def test_matching_server_date_corroborates(self, tmp_path):
+        log = tmp_path / "log.jsonl"
+        append_delivery(
+            log,
+            tier="daily_summary",
+            message_id=4823,
+            scheduled=True,
+            telegram_date=_tg_ts(TODAY),
+            now=ET_1630(TODAY),
+        )
+        result = verify_corroboration(read_deliveries(log))
+        assert result["checked"] == 1
+        assert result["corroborated"] == 1
+        assert result["mismatched"] == 0
+        assert result["missing"] == 0
+        assert result["mismatches"] == []
+
+    def test_server_date_on_next_et_day_is_mismatch(self, tmp_path):
+        # Recorded locally at 23:40 ET, but Telegram's server clock puts
+        # the send past midnight ET: the two clocks disagree on the day.
+        log = tmp_path / "log.jsonl"
+        late = datetime(TODAY.year, TODAY.month, TODAY.day, 23, 40, 0)
+        append_delivery(
+            log,
+            tier="daily_summary",
+            message_id=99,
+            scheduled=True,
+            telegram_date=_tg_ts(TODAY, hours_later=12),
+            now=late,
+        )
+        result = verify_corroboration(read_deliveries(log))
+        assert result["checked"] == 1
+        assert result["corroborated"] == 0
+        assert result["mismatched"] == 1
+        assert result["mismatches"][0]["message_id"] == 99
+        assert result["mismatches"][0]["telegram_et_date"] == "2026-09-09"
+
+    def test_missing_telegram_date_counted_not_failed(self, tmp_path):
+        # Pre-feature history has no server date; it must not read as a
+        # mismatch, only as missing corroboration.
+        log = tmp_path / "log.jsonl"
+        append_delivery(
+            log,
+            tier="daily_summary",
+            message_id=1,
+            scheduled=True,
+            now=ET_1630(TODAY),
+        )
+        result = verify_corroboration(read_deliveries(log))
+        assert result["missing"] == 1
+        assert result["checked"] == 0
+        assert result["mismatched"] == 0
+
+    def test_other_tiers_ignored(self):
+        records = [
+            {"tier": "level_change", "et_date": "2026-09-08", "telegram_date": 1},
+            {"tier": "emergency", "et_date": "2026-09-08", "telegram_date": 1},
+        ]
+        result = verify_corroboration(records)
+        assert result["checked"] == 0
+        assert result["missing"] == 0
+
+    def test_garbage_telegram_date_counts_missing(self):
+        records = [{"tier": "daily_summary", "et_date": "2026-09-08", "telegram_date": "not-a-number"}]
+        result = verify_corroboration(records)
+        assert result["missing"] == 1
+        assert result["checked"] == 0
