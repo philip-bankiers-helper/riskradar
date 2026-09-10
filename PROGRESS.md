@@ -29,3 +29,11 @@ Entries are append-only.
 - Suite green before and after: 239 passed, 1 deselected (+1 new test). Floor 245 vs baseline 225. Secrets scan clean.
 - Deployed 6e6b596 to the service ahead of today's slot: new pid 42360, /health 200, scheduler re-armed for 16:30 ET. Pushed c92f835..6e6b596 to origin/main.
 - W1 waiting on: today's 16:30 ET delivery (day 2), then five more consecutive days. No input needed from Philip.
+
+## 2026-09-10 — W1 night 4
+
+- Verified yesterday's scheduled delivery: launchd service delivered the 16:30:00 ET summary for 2026-09-09 (message 4837, heat 0.559) to thread 4799; delivery log and scheduler log agree. Scheduled streak: 2 days; today 16:30 ET is day 3 of 7 (service on pid 42360 through the check, then redeployed below).
+- One step: every delivery record now stores Telegram's server-side send timestamp (`telegram_date` from the Bot API response). `verify_corroboration()` re-derives each record's ET day from that server clock and flags any disagreement with the locally recorded day — the W1 evidence no longer trusts the Mac Studio's clock alone. `scripts/delivery_streak.py` reports corroboration counts; today's 16:30 ET record will be the first corroborated one.
+- Suite green before and after: 248 passed, 1 deselected (+9). Battle 49/49. Floor 254 vs baseline 225. Secrets scan clean.
+- Deployed bafd3de to the service ahead of today's slot: /health 200, scheduler re-armed for 16:30 ET (day 3 of 7).
+- W1 waiting on: today's 16:30 ET delivery (day 3), then four more consecutive days. No input needed from Philip.
