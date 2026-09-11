@@ -37,3 +37,10 @@ Entries are append-only.
 - Suite green before and after: 248 passed, 1 deselected (+9). Battle 49/49. Floor 254 vs baseline 225. Secrets scan clean.
 - Deployed bafd3de to the service ahead of today's slot: /health 200, scheduler re-armed for 16:30 ET (day 3 of 7).
 - W1 waiting on: today's 16:30 ET delivery (day 3), then four more consecutive days. No input needed from Philip.
+
+## 2026-09-11 — W1 night 5 (Friday verification)
+
+- Friday night: verification only, no features, no code changes.
+- Verified yesterday's scheduled delivery: launchd service delivered the 16:30:00 ET summary for 2026-09-10 (message 4884, heat 0.587) to thread 4799. First server-clock-corroborated record: Telegram's send timestamp re-derives to the same ET day (checked=1, corroborated=1, mismatched=0). Scheduled streak: 3 consecutive days; today 16:30 ET is day 4 of 7. Service healthy on pid 80114, /health 200, scheduler armed.
+- Gates: blocking 248 passed, 1 deselected; holdout 4 passed; battle 49/49; floor 254 vs baseline 225; secrets scan clean.
+- W1 waiting on: today's 16:30 ET delivery (day 4), then three more consecutive days. No input needed from Philip.
