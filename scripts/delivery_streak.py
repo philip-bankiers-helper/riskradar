@@ -24,6 +24,7 @@ from src.delivery_log import (  # noqa: E402
     daily_streak,
     read_deliveries,
     verify_corroboration,
+    w1_status,
 )
 
 
@@ -54,6 +55,7 @@ def main() -> int:
                 "manual_deliveries": len(records) - len(scheduled),
                 "last_scheduled_message_id": (last_scheduled or {}).get("message_id"),
                 "corroboration": corroboration,
+                "w1": w1_status(log_path),
             }
         )
     )

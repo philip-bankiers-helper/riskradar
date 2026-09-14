@@ -147,6 +147,86 @@ def daily_streak(
     }
 
 
+W1_REQUIRED_DAYS = 7
+
+
+def w1_status(
+    path: str | Path,
+    *,
+    today: date | None = None,
+    required: int = W1_REQUIRED_DAYS,
+) -> dict:
+    """Mechanical verdict for the W1 done_when.
+
+    W1 is met when ``required`` consecutive ET days each have a scheduled
+    16:30 ET daily summary, the streak is still live, and no record's ET
+    day disagrees with Telegram's server clock. Records predating the
+    corroboration feature count toward the streak (reported as
+    ``missing``, never as failures); only an actual clock disagreement
+    blocks the verdict.
+
+    Returns the verdict plus a ready-to-paste ``evidence`` line (day
+    range, per-day message ids oldest→newest, corroboration counts) so
+    the ROADMAP flip quotes assembled evidence instead of hand-copied
+    numbers.
+    """
+    all_records = read_deliveries(path)
+    streak = daily_streak(path, today=today)
+    corroboration = verify_corroboration(all_records)
+
+    by_day: dict[date, int | None] = {}
+    for rec in all_records:
+        if rec.get("tier") != DAILY_SUMMARY or not rec.get("scheduled", False):
+            continue
+        try:
+            by_day[date.fromisoformat(rec["et_date"])] = rec.get("message_id")
+        except (KeyError, ValueError):
+            continue
+
+    window: list[tuple[date, int | None]] = []
+    last: date | None = None
+    if streak["last_date"]:
+        try:
+            last = date.fromisoformat(streak["last_date"])
+        except ValueError:
+            last = None
+    if last is not None:
+        cursor = last
+        while cursor in by_day:
+            window.append((cursor, by_day[cursor]))
+            cursor -= timedelta(days=1)
+        window.reverse()
+
+    reasons: list[str] = []
+    if streak["streak"] < required:
+        reasons.append(f"streak {streak['streak']}/{required}")
+    if not streak["live"]:
+        reasons.append("streak not live")
+    if corroboration["mismatched"]:
+        reasons.append(f"{corroboration['mismatched']} clock mismatch(es)")
+
+    evidence = ""
+    if window:
+        ids = ",".join(str(mid) for _, mid in window)
+        evidence = (
+            f"{window[0][0].isoformat()}..{window[-1][0].isoformat()} "
+            f"messages {ids}; "
+            f"corroborated={corroboration['corroborated']} "
+            f"missing={corroboration['missing']} "
+            f"mismatched={corroboration['mismatched']}"
+        )
+
+    return {
+        "w1_met": not reasons,
+        "required_days": required,
+        "streak_days": streak["streak"],
+        "live": streak["live"],
+        "days_remaining": max(0, required - streak["streak"]),
+        "reasons": reasons,
+        "evidence": evidence,
+    }
+
+
 def verify_corroboration(records: list[dict]) -> dict:
     """Cross-check each delivery record against Telegram's server clock.
 

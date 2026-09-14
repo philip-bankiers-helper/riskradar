@@ -8,7 +8,14 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from src.alerts.alert_manager import AlertManager
-from src.delivery_log import ET, append_delivery, daily_streak, read_deliveries, verify_corroboration
+from src.delivery_log import (
+    ET,
+    append_delivery,
+    daily_streak,
+    read_deliveries,
+    verify_corroboration,
+    w1_status,
+)
 from src.models import HeatLevel
 from tests.test_alerts import _make_attribution, _make_heat, _make_recommendations
 
@@ -385,3 +392,99 @@ class TestVerifyCorroboration:
         result = verify_corroboration(records)
         assert result["missing"] == 1
         assert result["checked"] == 0
+
+
+# ── W1 verdict ──
+
+
+class TestW1Status:
+    def _streak_log(self, tmp_path, days, message_id_start=4800):
+        log = tmp_path / "log.jsonl"
+        for offset in range(days):
+            day = TODAY - timedelta(days=offset)
+            append_delivery(
+                log,
+                tier="daily_summary",
+                message_id=message_id_start + offset,
+                heat_score=0.5,
+                scheduled=True,
+                telegram_date=_tg_ts(day),
+                now=ET_1630(day),
+            )
+        return log
+
+    def test_six_days_not_met_one_remaining(self, tmp_path):
+        log = self._streak_log(tmp_path, 6)
+        result = w1_status(log, today=TODAY)
+        assert result["w1_met"] is False
+        assert result["days_remaining"] == 1
+        assert result["reasons"] == ["streak 6/7"]
+        assert result["live"] is True
+
+    def test_seven_live_days_met_with_evidence(self, tmp_path):
+        log = self._streak_log(tmp_path, 7)
+        result = w1_status(log, today=TODAY)
+        assert result["w1_met"] is True
+        assert result["reasons"] == []
+        assert result["days_remaining"] == 0
+        assert result["streak_days"] == 7
+        assert "2026-09-02..2026-09-08" in result["evidence"]
+        assert "messages 4806,4805,4804,4803,4802,4801,4800" in result["evidence"]
+        assert "corroborated=7" in result["evidence"]
+        assert "mismatched=0" in result["evidence"]
+
+    def test_stale_seven_day_streak_not_met(self, tmp_path):
+        log = self._streak_log(tmp_path, 7)
+        result = w1_status(log, today=TODAY + timedelta(days=3))
+        assert result["w1_met"] is False
+        assert "streak not live" in result["reasons"]
+
+    def test_clock_mismatch_blocks_even_at_seven(self, tmp_path):
+        log = self._streak_log(tmp_path, 7)
+        # Same-day dupe whose server timestamp lands on the next ET day:
+        # the two clocks disagree about a delivered day — verdict blocked.
+        append_delivery(
+            log,
+            tier="daily_summary",
+            message_id=9999,
+            scheduled=True,
+            telegram_date=_tg_ts(TODAY, hours_later=12),
+            now=ET_1630(TODAY),
+        )
+        result = w1_status(log, today=TODAY)
+        assert result["w1_met"] is False
+        assert any("mismatch" in reason for reason in result["reasons"])
+
+    def test_missing_corroboration_does_not_block(self, tmp_path):
+        # Pre-feature records carry no server timestamp; the streak still
+        # counts and the verdict holds with missing reported honestly.
+        log = tmp_path / "log.jsonl"
+        for offset in range(7):
+            day = TODAY - timedelta(days=offset)
+            append_delivery(
+                log,
+                tier="daily_summary",
+                message_id=4800 + offset,
+                scheduled=True,
+                now=ET_1630(day),
+            )
+        result = w1_status(log, today=TODAY)
+        assert result["w1_met"] is True
+        assert "missing=7" in result["evidence"]
+
+    def test_manual_sends_never_count(self, tmp_path):
+        log = tmp_path / "log.jsonl"
+        for offset in range(9):  # manual sends on 9 straight days
+            day = TODAY - timedelta(days=offset)
+            append_delivery(
+                log,
+                tier="daily_summary",
+                message_id=7000 + offset,
+                scheduled=False,
+                telegram_date=_tg_ts(day),
+                now=ET_1630(day),
+            )
+        result = w1_status(log, today=TODAY)
+        assert result["w1_met"] is False
+        assert result["streak_days"] == 0
+        assert result["evidence"] == ""
