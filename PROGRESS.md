@@ -52,3 +52,11 @@ Entries are append-only.
 - Suite green before and after: 254 passed, 1 deselected (+6). Floor 260 vs baseline 225. Secrets scan clean.
 - Deployed 8dff6e0 ahead of today's slot: pid 80114→90663, /health 200, scheduler re-armed for 16:30 ET (day 7 of 7).
 - W1 waiting on: today's 16:30 ET delivery (day 7), then the ROADMAP flip tomorrow night. No input needed from Philip.
+
+## 2026-09-15 — W1 CLOSED (night 7, Tuesday)
+
+- W1 met and flipped: 7 consecutive scheduled 16:30 ET summaries 2026-09-08..09-14 (messages 4823, 4837, 4884, 4911, 4916, 4918, 4965); server-clock corroboration checked=5 corroborated=5 mismatched=0; service live (pid 90663, /health 200). ROADMAP.json W1 "passes": true quotes the w1_status mechanical evidence line — commit 2bea785.
+- W2 WAITING on Philip: config/positions.yaml still SAMPLE; no real holdings supplied.
+- W3 prep (one small step): src/engine/scorecard.py extract_drawdown_episodes() — peak->trough->recovery episodes >=5% over the trailing 24 months, ragged paths counted once at worst depth, unrecovered losses kept with recovery_date=None. 8 offline unit tests in tests/test_scorecard.py. This is the episode list the warning-day scorecard (VIX>25, 50-day MA lead time) will count against.
+- Tests: 262 passed, 1 deselected (was 254). Floor 268 vs baseline 225. Secrets scan clean. Commit b387a0f.
+- Done: W1 closed after 7 nights. Waiting on: Philip's real holdings for W2; W3 scorecard assembly continues meanwhile.
