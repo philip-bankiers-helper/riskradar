@@ -3,7 +3,12 @@
 import pandas as pd
 import pytest
 
-from src.engine.scorecard import DrawdownEpisode, extract_drawdown_episodes
+from src.engine.scorecard import (
+    DrawdownEpisode,
+    EpisodeWarning,
+    extract_drawdown_episodes,
+    measure_warning_leads,
+)
 
 
 def series_from(prices, start="2024-01-02"):
@@ -79,3 +84,105 @@ def test_episode_dataclass_is_frozen():
     )
     with pytest.raises(Exception):
         ep.depth = -0.05  # type: ignore[misc]
+
+
+# --- measure_warning_leads -------------------------------------------------
+
+# Peak idx3 (100), trough idx6 (92, -8%), recovery idx8.
+LEAD_PRICES = [100, 100, 100, 100, 97, 94, 92, 96, 100]
+
+
+def test_leads_first_fire_day_counts_and_lead_days():
+    s = series_from(LEAD_PRICES)
+    vix = pd.Series([20, 20, 20, 20, 20, 26, 27, 21, 20], index=s.index)
+    warns = measure_warning_leads(s, vix, ma_window=3)
+    assert len(warns) == 1
+    w = warns[0]
+    # MA(3) over the span 100,97,94,92 -> fires at 97<99, 94<97, 92<94.67
+    assert w.ma_first_date == s.index[4]
+    assert w.ma_days_active == 3
+    assert w.ma_lead_days == (s.index[6] - s.index[4]).days
+    # VIX crosses on idx5, stays over on idx6 (trough day)
+    assert w.vix_first_date == s.index[5]
+    assert w.vix_days_active == 2
+    assert w.vix_lead_days == (s.index[6] - s.index[5]).days
+    assert w.vix_fired and w.ma_fired
+
+
+def test_leads_misses_are_honest_and_threshold_is_strict():
+    s = series_from(LEAD_PRICES)
+    # VIX pinned exactly at 25 -> strict > never fires; MA warmup absent
+    vix = pd.Series([25.0] * len(s), index=s.index)
+    warns = measure_warning_leads(s, vix, ma_window=50)
+    w = warns[0]
+    assert not w.vix_fired and w.vix_first_date is None
+    assert w.vix_days_active == 0 and w.vix_lead_days is None
+    assert not w.ma_fired and w.ma_days_active == 0 and w.ma_lead_days is None
+    # No VIX supplied at all -> same honest miss
+    warns_none = measure_warning_leads(s, None, ma_window=50)
+    assert warns_none[0].vix_fired is False
+
+
+def test_leads_pre_peak_fire_is_not_attributed():
+    # Peak idx2 (102), trough idx4 (94). VIX spiked at idx0, before the peak.
+    s = series_from([100, 101, 102, 96, 94, 97, 102])
+    vix = pd.Series([30, 20, 20, 20, 20, 20, 20], index=s.index)
+    warns = measure_warning_leads(s, vix, ma_window=2)
+    w = warns[0]
+    assert w.vix_first_date is None and w.vix_days_active == 0
+    # MA(2) does fire inside the episode: contrast proves the attribution rule
+    assert w.ma_first_date == s.index[3]
+    assert w.ma_lead_days == (s.index[4] - s.index[3]).days
+
+
+def test_leads_coarse_vix_stamps_are_ffill_aligned():
+    s = series_from(LEAD_PRICES)
+    vix = pd.Series([26.0, 26.0, 26.0], index=s.index[::3])  # idx 0, 3, 6
+    warns = measure_warning_leads(s, vix, ma_window=50)
+    w = warns[0]
+    # Stamp at idx3 forward-fills across the whole span idx3..idx6
+    assert w.vix_first_date == s.index[3]
+    assert w.vix_days_active == 4  # idx3, 4, 5, 6
+    assert w.vix_lead_days == (s.index[6] - s.index[3]).days
+
+
+def test_leads_fire_on_trough_day_scores_zero_lead():
+    s = series_from(LEAD_PRICES)
+    values = [20.0] * len(s)
+    values[6] = 26.0  # exactly the trough day
+    vix = pd.Series(values, index=s.index)
+    w = measure_warning_leads(s, vix, ma_window=50)[0]
+    assert w.vix_first_date == w.episode.trough_date
+    assert w.vix_days_active == 1
+    assert w.vix_lead_days == 0
+
+
+def test_leads_unrecovered_episode_is_measured():
+    s = series_from([100, 96, 90, 92])  # ends under water
+    vix = pd.Series([20, 26, 26, 26], index=s.index)
+    w = measure_warning_leads(s, vix, ma_window=2)[0]
+    assert w.episode.recovery_date is None
+    assert w.vix_first_date == s.index[1]
+    assert w.vix_lead_days == (s.index[2] - s.index[1]).days
+    assert w.ma_first_date == s.index[1] and w.ma_days_active == 2
+
+
+def test_leads_two_episodes_measured_independently():
+    # Ep1 peak idx0 trough idx1 (-5%); ep2 peak idx3 trough idx4 (-6%)
+    s = series_from([100, 95, 100, 100, 94, 97, 100])
+    vix = pd.Series([20, 26, 20, 20, 20, 20, 20], index=s.index)
+    warns = measure_warning_leads(s, vix, ma_window=3)
+    assert len(warns) == 2
+    assert warns[0].episode.peak_date == s.index[0]
+    assert warns[0].vix_lead_days == 0  # fired on ep1's trough day
+    assert warns[1].vix_fired is False  # ep1's spike does not leak into ep2
+    assert warns[1].ma_lead_days == 0  # MA fires on ep2's trough day
+
+
+def test_leads_explicit_episodes_argument_is_used_as_is():
+    s = series_from(LEAD_PRICES)
+    assert measure_warning_leads(s, None, episodes=[], ma_window=3) == []
+    ep = extract_drawdown_episodes(s)[0]
+    warns = measure_warning_leads(s, None, episodes=[ep], ma_window=3)
+    assert len(warns) == 1 and warns[0].episode is ep
+    assert isinstance(warns[0], EpisodeWarning)
