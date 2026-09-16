@@ -60,3 +60,11 @@ Entries are append-only.
 - W3 prep (one small step): src/engine/scorecard.py extract_drawdown_episodes() — peak->trough->recovery episodes >=5% over the trailing 24 months, ragged paths counted once at worst depth, unrecovered losses kept with recovery_date=None. 8 offline unit tests in tests/test_scorecard.py. This is the episode list the warning-day scorecard (VIX>25, 50-day MA lead time) will count against.
 - Tests: 262 passed, 1 deselected (was 254). Floor 268 vs baseline 225. Secrets scan clean. Commit b387a0f.
 - Done: W1 closed after 7 nights. Waiting on: Philip's real holdings for W2; W3 scorecard assembly continues meanwhile.
+
+## 2026-09-16 — W3 night 2 (Wednesday)
+
+- Streak check: launchd service delivered the 16:30:00 ET summary for 2026-09-15 (message 4990, corroborated by Telegram's server clock; checked=6, corroborated=6, mismatched=0). Scheduled streak: 8 consecutive days (2026-09-08..09-15). Service live on pid 90663, /health 200.
+- W2 still WAITING on Philip: config/positions.yaml remains SAMPLE.
+- W3 step 2: src/engine/scorecard.py measure_warning_leads() — for every extracted episode, records when VIX>25 and close<50-day-MA first fired inside [peak, trough], how many days each stayed active, and each signal's lead days to the trough. Attribution is per-episode (pre-peak fires don't leak in), MA warmup and missing VIX are honest misses, coarse VIX stamps forward-fill onto the close index, trough-day fires score lead 0, unrecovered episodes measured the same as recovered ones. 8 offline unit tests.
+- Tests: 270 passed, 1 deselected (was 262). Floor 276 vs baseline 225. Secrets scan clean. Commit 0c37e9c.
+- Done: warning-lead measurement layer. Next: assemble the weekly scorecard report (episodes x warning leads -> hit/miss/lead-time table, posted weekly). Waiting on: Philip's real holdings for W2.
