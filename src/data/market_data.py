@@ -44,12 +44,18 @@ class MarketDataClient:
         logger.info("Fetching price data for %d symbols via yfinance", len(symbols))
 
         try:
+            # threads=False is load-bearing: yfinance's threaded downloader
+            # leaks file descriptors per call (thread-local session caches +
+            # never-reaped sockets) and exhausted the FD table on 2026-09-16,
+            # killing the scheduled 16:30 ET summary with [Errno 24].
+            # Serial download plateaus at a stable FD count (verified live).
             data = yf.download(
                 symbols,
                 start=start.strftime("%Y-%m-%d"),
                 end=end.strftime("%Y-%m-%d"),
                 progress=False,
                 auto_adjust=True,
+                threads=False,
             )
 
             if isinstance(data.columns, pd.MultiIndex):
@@ -99,6 +105,7 @@ class MarketDataClient:
             end=end.strftime("%Y-%m-%d"),
             progress=False,
             auto_adjust=True,
+            threads=False,  # serial download: no per-call FD leak (see get_returns)
         )
 
         if isinstance(data.columns, pd.MultiIndex):
