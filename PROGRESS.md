@@ -68,3 +68,13 @@ Entries are append-only.
 - W3 step 2: src/engine/scorecard.py measure_warning_leads() — for every extracted episode, records when VIX>25 and close<50-day-MA first fired inside [peak, trough], how many days each stayed active, and each signal's lead days to the trough. Attribution is per-episode (pre-peak fires don't leak in), MA warmup and missing VIX are honest misses, coarse VIX stamps forward-fill onto the close index, trough-day fires score lead 0, unrecovered episodes measured the same as recovered ones. 8 offline unit tests.
 - Tests: 270 passed, 1 deselected (was 262). Floor 276 vs baseline 225. Secrets scan clean. Commit 0c37e9c.
 - Done: warning-lead measurement layer. Next: assemble the weekly scorecard report (episodes x warning leads -> hit/miss/lead-time table, posted weekly). Waiting on: Philip's real holdings for W2.
+
+## 2026-09-17 — incident night: FD leak killed the 09-16 summary (Thursday)
+
+- Incident: the 2026-09-16 16:30 ET scheduled summary FAILED to send — alert manager hit `[Errno 24] Too many open files` (stdout.log 15:29:59 CT; two attempts 18 ms apart, then re-armed). No message, no delivery-log record for the day. Post-W1 miss = fresh incident, not a ROADMAP rollback.
+- Root cause: the 5-min heat loop refetches 18 symbols (9 SAMPLE positions + 9 factor ETFs) via `yf.download(threads=True)`; yfinance 1.7.0's threaded downloader leaks FDs per call — thread-local session caches plus never-reaped sockets. Live evidence on pid 90663 after 61 h uptime (deployed 09-14, longest stretch ever): 65 sockets stuck in CLOSE_WAIT + 41 tkr-tz sqlite handles; the daily-summary send burst tipped the FD table over. Nightly W1-era restarts had masked the leak. Reproduced with the exact 18-symbol set: threads=True grows FDs monotonically (26->48->64->52 over 4 calls), threads=False plateaus at a stable 56-60.
+- Fix (commit ed296a5): `market_data.py` get_returns/get_prices now pass `threads=False`; 3 offline contract tests pin the kwargs. backtest.py/benchmark.py left untouched (offline paths, not in the 5-min loop).
+- Gates: 273 passed, 1 deselected (was 270). Holdout 4 passed. Floor 279 vs baseline 225. Secrets scan clean.
+- Deployed ed296a5 to com.kairox.riskradar ahead of today's slot: pid 90663->39592, /health 200, scheduler re-armed "at 16:30 ET" (46097 s), fresh process at 48 FDs.
+- Scheduled streak: BROKEN at 8 (2026-09-08..09-15). Today's 16:30 ET delivery — first on fixed code — restarts the count at day 1; tomorrow's run verifies it landed.
+- W2 still WAITING on Philip: config/positions.yaml remains SAMPLE. W3 scorecard assembly not advanced tonight — the incident fix took the step slot.
