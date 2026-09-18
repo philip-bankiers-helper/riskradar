@@ -78,3 +78,11 @@ Entries are append-only.
 - Deployed ed296a5 to com.kairox.riskradar ahead of today's slot: pid 90663->39592, /health 200, scheduler re-armed "at 16:30 ET" (46097 s), fresh process at 48 FDs.
 - Scheduled streak: BROKEN at 8 (2026-09-08..09-15). Today's 16:30 ET delivery — first on fixed code — restarts the count at day 1; tomorrow's run verifies it landed.
 - W2 still WAITING on Philip: config/positions.yaml remains SAMPLE. W3 scorecard assembly not advanced tonight — the incident fix took the step slot.
+
+## 2026-09-18 — Friday verification (post-fix streak day 1 verified)
+
+- Friday: verification only, no features, no code changes.
+- Verified yesterday's scheduled delivery: the 2026-09-17 16:30 ET summary — first on fixed code — landed as message 5014 in thread 4799. Server-clock corroboration across the log: checked=7, corroborated=7, mismatched=0. Scheduled streak: 1 of 7 consecutive (restarted 2026-09-17 after the FD incident broke it at 8). Service live: pid 39592, /health 200, uptime ~24 h.
+- FD-fix validation (ed296a5, first full day in production): 42 open FDs at ~24 h vs 48 at deploy — flat, no monotonic growth; 13 bounded CLOSE_WAIT sockets (failure signature was 65 CLOSE_WAIT + 41 sqlite handles climbing). The 09-17 daily send burst passed with no Errno 24. At this rate the Sat/Sun 16:30 ET sends (no nightly run until Monday) are safe.
+- Gates: blocking 273 passed, 1 deselected; holdout 4 passed; battle 49/49; floor 279 vs baseline 225; secrets scan clean.
+- W2 still WAITING on Philip: config/positions.yaml remains SAMPLE. W3 next step (Monday): assemble the weekly scorecard report — episodes × warning leads → hit/miss/lead-time table.
