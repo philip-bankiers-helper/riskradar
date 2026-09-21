@@ -12,6 +12,7 @@ Pure computation, no network.
 from __future__ import annotations
 
 import logging
+import statistics
 from dataclasses import dataclass
 
 import pandas as pd
@@ -244,3 +245,172 @@ def measure_warning_leads(
         sum(w.ma_fired for w in warnings),
     )
     return warnings
+
+
+@dataclass(frozen=True)
+class SignalStat:
+    """Hit/miss and lead-time aggregates for one warning signal.
+
+    ``fired`` is how many episodes the signal fired in; ``total`` is how
+    many episodes were on the table — misses and unrecovered losses
+    included, so the hit rate can never look good by dropping bad weeks.
+    ``median_lead_days`` is over fired episodes only; None when the
+    signal never fired or there were no episodes at all.
+    """
+
+    fired: int
+    total: int
+    median_lead_days: float | None
+
+    @property
+    def hit_rate(self) -> float:
+        """Fraction of episodes caught (0.0 when there was nothing to catch)."""
+        return self.fired / self.total if self.total else 0.0
+
+
+@dataclass(frozen=True)
+class WeeklyScorecard:
+    """The W3 report body: episodes x warning leads plus aggregates."""
+
+    symbol: str
+    window_start: pd.Timestamp
+    window_end: pd.Timestamp
+    warnings: tuple[EpisodeWarning, ...]
+    vix: SignalStat
+    ma: SignalStat
+    either: SignalStat
+
+    @property
+    def episode_count(self) -> int:
+        return len(self.warnings)
+
+
+def _signal_stat(
+    warnings: tuple[EpisodeWarning, ...],
+    fired_of,
+    lead_of,
+) -> SignalStat:
+    leads = [lead_of(w) for w in warnings if fired_of(w)]
+    return SignalStat(
+        fired=len(leads),
+        total=len(warnings),
+        median_lead_days=statistics.median(leads) if leads else None,
+    )
+
+
+def build_weekly_scorecard(
+    symbol: str,
+    closes: pd.Series,
+    vix: pd.Series | None,
+    ma_window: int = 50,
+    vix_threshold: float = 25.0,
+    lookback_months: int = 24,
+) -> WeeklyScorecard:
+    """Assemble the weekly lead-time scorecard for one symbol.
+
+    Chains extract_drawdown_episodes + measure_warning_leads into the
+    report body W3 asks for: every >=5% drawdown in the trailing
+    ``lookback_months`` (unrecovered losses included), each signal's
+    hit/miss and lead days per episode, and hit-rate / median-lead
+    aggregates per signal plus an "either signal fired" row whose lead
+    is the earliest firing signal's (the max of the available leads).
+    Empty or non-series input yields an episode-count-zero scorecard
+    with NaT window bounds — a week with no qualifying drawdown is a
+    valid report, not an exception.
+    """
+    if not isinstance(closes, pd.Series) or closes.empty:
+        empty = SignalStat(fired=0, total=0, median_lead_days=None)
+        return WeeklyScorecard(
+            symbol=symbol,
+            window_start=pd.NaT,
+            window_end=pd.NaT,
+            warnings=(),
+            vix=empty,
+            ma=empty,
+            either=empty,
+        )
+
+    window = closes.iloc[-max_lookback_slice(lookback_months, closes):]
+    warnings = tuple(
+        measure_warning_leads(
+            closes,
+            vix,
+            ma_window=ma_window,
+            vix_threshold=vix_threshold,
+            lookback_months=lookback_months,
+        )
+    )
+
+    def either_lead(w: EpisodeWarning) -> int:
+        leads = [d for d in (w.vix_lead_days, w.ma_lead_days) if d is not None]
+        return max(leads)
+
+    return WeeklyScorecard(
+        symbol=symbol,
+        window_start=window.index[0],
+        window_end=window.index[-1],
+        warnings=warnings,
+        vix=_signal_stat(
+            warnings, lambda w: w.vix_fired, lambda w: w.vix_lead_days
+        ),
+        ma=_signal_stat(
+            warnings, lambda w: w.ma_fired, lambda w: w.ma_lead_days
+        ),
+        either=_signal_stat(
+            warnings,
+            lambda w: w.vix_fired or w.ma_fired,
+            either_lead,
+        ),
+    )
+
+
+def _fmt_day(ts: pd.Timestamp) -> str:
+    return ts.strftime("%Y-%m-%d") if pd.notna(ts) else "n/a"
+
+
+def _mark(fired: bool, lead_days: int | None) -> str:
+    return f"HIT +{lead_days}d" if fired else "MISS"
+
+
+def _lead_txt(stat: SignalStat) -> str:
+    if stat.median_lead_days is None:
+        return "n/a"
+    return f"{stat.median_lead_days:g}d"
+
+
+def render_scorecard_text(card: WeeklyScorecard) -> str:
+    """Render the weekly scorecard as Telegram-HTML text (pure, no sending).
+
+    One line per episode — peak -> trough, depth, recovery status, and
+    each signal's HIT/MISS with lead days — then the aggregate hit-rate
+    line. Uses the daily summary's <b> style so a future weekly post
+    reads native next to it.
+    """
+    head = (
+        f"\U0001f4ca <b>WEEKLY LEAD-TIME SCORECARD</b> \u2014 {card.symbol}\n"
+        f"Window: {_fmt_day(card.window_start)} \u2192 "
+        f"{_fmt_day(card.window_end)}"
+    )
+    if not card.warnings:
+        return head + "\n\nNo qualifying drawdowns in the window."
+
+    lines = [head, "", f"<b>Drawdown episodes (\u22655%): {card.episode_count}</b>"]
+    for i, w in enumerate(card.warnings, 1):
+        e = w.episode
+        status = "recovered" if e.recovery_date is not None else "UNRECOVERED"
+        lines.append(
+            f"{i}. {_fmt_day(e.peak_date)}\u2192{_fmt_day(e.trough_date)} "
+            f"{e.depth:.1%} ({e.days_peak_to_trough}d, {status}) | "
+            f"VIX {_mark(w.vix_fired, w.vix_lead_days)} | "
+            f"MA {_mark(w.ma_fired, w.ma_lead_days)}"
+        )
+    lines.append("")
+    lines.append(
+        f"<b>Hits:</b> VIX {card.vix.fired}/{card.vix.total} "
+        f"({card.vix.hit_rate:.0%}) lead {_lead_txt(card.vix)} \u00b7 "
+        f"MA {card.ma.fired}/{card.ma.total} ({card.ma.hit_rate:.0%}) "
+        f"lead {_lead_txt(card.ma)} \u00b7 "
+        f"either {card.either.fired}/{card.either.total} "
+        f"({card.either.hit_rate:.0%}) lead {_lead_txt(card.either)}"
+    )
+    return "\n".join(lines)

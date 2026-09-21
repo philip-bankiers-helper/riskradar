@@ -6,8 +6,12 @@ import pytest
 from src.engine.scorecard import (
     DrawdownEpisode,
     EpisodeWarning,
+    SignalStat,
+    WeeklyScorecard,
+    build_weekly_scorecard,
     extract_drawdown_episodes,
     measure_warning_leads,
+    render_scorecard_text,
 )
 
 
@@ -186,3 +190,109 @@ def test_leads_explicit_episodes_argument_is_used_as_is():
     warns = measure_warning_leads(s, None, episodes=[ep], ma_window=3)
     assert len(warns) == 1 and warns[0].episode is ep
     assert isinstance(warns[0], EpisodeWarning)
+
+
+# ---- weekly scorecard assembly (W3 step 3) ----
+
+def two_episode_closes():
+    """60 warmup days flat at 100 (MA warm), two >=5% episodes, flat tail."""
+    prices = (
+        [100.0] * 60
+        + [95, 90, 95, 100, 100, 100]  # episode A: -10%, MA fires at 95
+        + [96.5, 93, 96.5, 100]  # episode B: -7%
+        + [100.0] * 5
+    )
+    return series_from(prices)
+
+
+def vix_for(closes, fire_a=True, fire_b=False):
+    vix = pd.Series(15.0, index=closes.index)
+    if fire_a:
+        vix.loc[closes.index[60:62]] = 30.0  # A's two drop days -> lead 1
+    if fire_b:
+        vix.loc[closes.index[66:68]] = 30.0  # B's two drop days -> lead 1
+    return vix
+
+
+def test_scorecard_aggregates_hits_and_lead_times():
+    closes = two_episode_closes()
+    card = build_weekly_scorecard("SPY", closes, vix_for(closes))
+    assert isinstance(card, WeeklyScorecard)
+    assert card.episode_count == 2
+    assert (card.vix.fired, card.vix.total) == (1, 2)
+    assert card.vix.hit_rate == pytest.approx(0.5)
+    assert card.vix.median_lead_days == 1.0
+    assert (card.ma.fired, card.ma.total) == (2, 2)
+    assert card.ma.hit_rate == 1.0
+    assert card.ma.median_lead_days == 1.0
+    assert (card.either.fired, card.either.total) == (2, 2)
+    assert card.either.median_lead_days == 1.0
+
+
+def test_scorecard_median_lead_even_count_averages_middle_pair():
+    closes = two_episode_closes()
+    vix = vix_for(closes, fire_a=True, fire_b=False)
+    vix.loc[closes.index[65:67]] = 30.0  # fires on B's peak day -> lead 2
+    card = build_weekly_scorecard("SPY", closes, vix)
+    assert card.vix.fired == 2
+    assert card.vix.median_lead_days == 1.5
+
+
+def test_scorecard_either_uses_earliest_signal_lead():
+    # Single episode; VIX fires on the peak day (lead 2), MA a day later (lead 1).
+    closes = series_from([100.0] * 60 + [95, 90, 95, 100] + [100.0] * 5)
+    vix = pd.Series(15.0, index=closes.index)
+    vix.loc[closes.index[59:60]] = 30.0
+    card = build_weekly_scorecard("SPY", closes, vix)
+    w = card.warnings[0]
+    assert w.vix_lead_days == 2 and w.ma_lead_days == 1
+    assert card.either.fired == 1
+    assert card.either.median_lead_days == 2
+
+
+def test_scorecard_unrecovered_losses_count_in_totals():
+    closes = series_from([100.0] * 60 + [95, 90, 88])  # never recovers
+    card = build_weekly_scorecard("SPY", closes, None)
+    assert card.episode_count == 1
+    assert card.ma.total == 1 and card.vix.total == 1
+    assert card.ma.fired == 1
+    assert card.vix.fired == 0  # no vix supplied -> honest miss
+    assert card.vix.median_lead_days is None
+    assert "UNRECOVERED" in render_scorecard_text(card)
+
+
+def test_scorecard_empty_input_is_a_valid_empty_report():
+    card = build_weekly_scorecard("SPY", pd.Series(dtype=float), None)
+    assert card.episode_count == 0
+    for stat in (card.vix, card.ma, card.either):
+        assert isinstance(stat, SignalStat)
+        assert (stat.fired, stat.total) == (0, 0)
+        assert stat.hit_rate == 0.0
+        assert stat.median_lead_days is None
+    text = render_scorecard_text(card)
+    assert "No qualifying drawdowns" in text
+
+
+def test_scorecard_short_history_counts_ma_warmup_as_miss():
+    closes = series_from([100, 95, 90, 95, 100])  # shorter than 50d MA warmup
+    card = build_weekly_scorecard("SPY", closes, None)
+    assert card.episode_count == 1
+    assert card.ma.fired == 0
+    assert card.either.fired == 0
+    assert "MA MISS" in render_scorecard_text(card)
+
+
+def test_render_scorecard_has_table_and_aggregates():
+    closes = two_episode_closes()
+    card = build_weekly_scorecard("SPY", closes, vix_for(closes))
+    text = render_scorecard_text(card)
+    assert "WEEKLY LEAD-TIME SCORECARD" in text
+    assert "SPY" in text
+    assert "VIX HIT +1d" in text  # episode A
+    assert "VIX MISS" in text  # episode B
+    assert text.count("MA HIT +1d") == 2
+    assert "-10.0%" in text and "-7.0%" in text
+    assert "VIX 1/2 (50%)" in text
+    assert "MA 2/2 (100%)" in text
+    assert "either 2/2 (100%)" in text
+    assert "recovered" in text
