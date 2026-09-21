@@ -86,3 +86,12 @@ Entries are append-only.
 - FD-fix validation (ed296a5, first full day in production): 42 open FDs at ~24 h vs 48 at deploy — flat, no monotonic growth; 13 bounded CLOSE_WAIT sockets (failure signature was 65 CLOSE_WAIT + 41 sqlite handles climbing). The 09-17 daily send burst passed with no Errno 24. At this rate the Sat/Sun 16:30 ET sends (no nightly run until Monday) are safe.
 - Gates: blocking 273 passed, 1 deselected; holdout 4 passed; battle 49/49; floor 279 vs baseline 225; secrets scan clean.
 - W2 still WAITING on Philip: config/positions.yaml remains SAMPLE. W3 next step (Monday): assemble the weekly scorecard report — episodes × warning leads → hit/miss/lead-time table.
+
+## 2026-09-21 — W3 night 5 (Monday)
+
+- Weekend verified: launchd service delivered both scheduled 16:30 ET summaries — 2026-09-19 (message 5131) and 2026-09-20 (message 5151) — with no nightly run in between. Server-clock corroboration across the log: checked=10, corroborated=10, mismatched=0. Scheduled streak: 4 of 7 consecutive (2026-09-17..09-20); today 16:30 ET is day 5.
+- FD-fix validation at ~96 h uptime (pid 39592, deployed 09-17, survived two weekend send bursts + full heat-loop cadence): 46 open FDs vs 48 at deploy — flat; 4 CLOSE_WAIT sockets and 16 py-yfinance cache handles, both bounded. The 09-17 pre-fix signature (65 CLOSE_WAIT + 41 tkr-tz handles climbing) is absent. threads=False fix (ed296a5) confirmed stable in production.
+- W3 step 3: src/engine/scorecard.py build_weekly_scorecard() + render_scorecard_text() — the weekly report body. Per-episode hit/miss/lead-time lines (peak→trough, depth, recovery status, VIX/MA marks) plus per-signal aggregates: hit rate, median lead over fired episodes, and an either-signal row whose lead is the earliest fire. Unrecovered losses, MA-warmup misses, and missing-VIX misses all count in totals; an empty window is a valid empty report. 7 offline unit tests.
+- Tests: 280 passed, 1 deselected (was 273). Floor 286 vs baseline 225. Secrets scan clean. Commits d43dc73 (code).
+- W2 still WAITING on Philip: config/positions.yaml remains SAMPLE. W3 next step: wire the scorecard into the weekly cadence (regenerate + post to thread 4799 on a weekly schedule), then a real-data smoke of the rendered output. No service redeploy tonight — change is offline-only.
+
