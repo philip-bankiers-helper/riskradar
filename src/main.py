@@ -33,6 +33,7 @@ from src.engine.crowding import CrowdingEngine
 from src.engine.recommendations import TradeRecommendationEngine
 from src.engine.regime import RegimeDetector
 from src.engine.throttle import PreTradeSimulator, RiskThrottle
+from src.engine.weekly_scorecard import is_weekly_scorecard_slot, produce_weekly_scorecard_text
 from src.models import (
     ClusterInfo,
     ClusterMigration,
@@ -584,6 +585,23 @@ async def _daily_summary_scheduler(app_state: dict) -> None:
                     )
                 else:
                     logger.error("Daily summary FAILED to send at scheduled time")
+
+                # Weekly scorecard rides the Monday slot, strictly AFTER
+                # the daily summary: a scorecard failure must never delay
+                # or suppress the daily delivery.
+                if is_weekly_scorecard_slot(target):
+                    try:
+                        text = await produce_weekly_scorecard_text()
+                        if text and await alert_manager.send_weekly_scorecard(text):
+                            logger.info(
+                                "Weekly scorecard sent (message_id=%s)",
+                                alert_manager.last_message_id,
+                            )
+                        else:
+                            logger.error("Weekly scorecard skipped or FAILED to send")
+                    except Exception as exc:  # noqa: BLE001 - never break the loop
+                        logger.error("Weekly scorecard error: %s", exc)
+
             else:
                 logger.error(
                     "Daily summary skipped: alert_manager=%s heat=%s",

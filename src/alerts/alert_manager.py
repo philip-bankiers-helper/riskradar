@@ -19,6 +19,7 @@ from enum import Enum
 import httpx
 
 from src.delivery_log import ET
+from src.engine.weekly_scorecard import WEEKLY_SCORECARD_TIER
 from src.models import HeatLevel, HeatScore, PositionAttribution, PortfolioRecommendation
 
 logger = logging.getLogger(__name__)
@@ -237,6 +238,31 @@ class AlertManager:
                     tier=AlertTier.DAILY_SUMMARY.value,
                     message_id=self.last_message_id,
                     heat_score=heat_score.score,
+                    scheduled=scheduled,
+                    telegram_date=self.last_telegram_date,
+                )
+            return True
+        return False
+
+    async def send_weekly_scorecard(self, text: str, scheduled: bool = True) -> bool:
+        """Post the W3 weekly lead-time scorecard (no cooldown).
+
+        Cadence is enforced by the scheduler's Monday gate, not a
+        cooldown: a stray manual send must never suppress the week's
+        real post (mirrors the ``scheduled`` reasoning of the daily
+        summary). Recorded under its own delivery-log tier so the
+        daily-summary streak math ignores it.
+        """
+        if not text:
+            return False
+        if await self._send_telegram(text):
+            if self.delivery_log_path:
+                from src.delivery_log import append_delivery
+
+                append_delivery(
+                    self.delivery_log_path,
+                    tier=WEEKLY_SCORECARD_TIER,
+                    message_id=self.last_message_id,
                     scheduled=scheduled,
                     telegram_date=self.last_telegram_date,
                 )
