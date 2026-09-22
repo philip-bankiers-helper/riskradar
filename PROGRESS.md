@@ -95,3 +95,13 @@ Entries are append-only.
 - Tests: 280 passed, 1 deselected (was 273). Floor 286 vs baseline 225. Secrets scan clean. Commits d43dc73 (code).
 - W2 still WAITING on Philip: config/positions.yaml remains SAMPLE. W3 next step: wire the scorecard into the weekly cadence (regenerate + post to thread 4799 on a weekly schedule), then a real-data smoke of the rendered output. No service redeploy tonight — change is offline-only.
 
+
+## 2026-09-22 — W3 night 6 (Tuesday)
+
+- Streak check: launchd service delivered the 16:30:00 ET summary for 2026-09-21 (message 5181, server-clock corroborated; checked=11, corroborated=11, mismatched=0). Scheduled streak: 5 of 7 consecutive (2026-09-17..09-21); today's 16:30 ET slot is day 6.
+- FD-fix validation CLOSED at ~120 h uptime (pid 39592, longest stretch): 33 open FDs vs 48 at deploy (46 at 96 h) — flat/declining, 4 CLOSE_WAIT bounded, no Errno 24 across five daily send bursts. threads=False fix (ed296a5) is stable; no further nightly FD readings needed barring a new incident.
+- W3 step 4: weekly scorecard cadence wiring (commit 4688bdc). is_weekly_scorecard_slot() gates the Monday 16:30 ET slot (late fires still count for their week); produce_weekly_scorecard_text() fetches SPY+^VIX through the FD-safe MarketDataClient path off the event loop and returns None instead of raising; AlertManager.send_weekly_scorecard() posts under its own delivery-log tier (no cooldown) — proven invisible to the W1 daily-streak math by test; scheduler sends the scorecard strictly AFTER the daily summary so a failure can never delay or suppress the daily delivery. 12 offline unit tests.
+- Real-data render smoke (no send): 24-month window 2024-09-23→2026-09-21, 3 SPY episodes ≥5% (2025-02-19→04-08 -18.8%, 2025-10-29→11-20 -5.1%, 2026-01-27→03-30 -8.9%); VIX 3/3 hits median lead 24 d, MA 3/3 hits median lead 43 d. First automatic weekly post: Monday 2026-09-28 16:30 ET.
+- Gates: 292 passed, 1 deselected (was 280). Floor 298 vs baseline 225. Secrets scan clean.
+- Deployed 4688bdc to com.kairox.riskradar ahead of today's slot: pid 39592→10386, /health 200, scheduler re-armed for 16:30 ET (day 6 of 7), fresh process at 21 FDs.
+- W2 still WAITING on Philip: config/positions.yaml remains SAMPLE. W3 remaining: verify the first automatic weekly post lands Monday 2026-09-28, then flip the increment.
