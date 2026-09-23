@@ -10,11 +10,13 @@ import pytest
 from src.alerts.alert_manager import AlertManager
 from src.delivery_log import (
     ET,
+    WEEKLY_SCORECARD,
     append_delivery,
     daily_streak,
     read_deliveries,
     verify_corroboration,
     w1_status,
+    w3_status,
 )
 from src.models import HeatLevel
 from tests.test_alerts import _make_attribution, _make_heat, _make_recommendations
@@ -488,3 +490,134 @@ class TestW1Status:
         assert result["w1_met"] is False
         assert result["streak_days"] == 0
         assert result["evidence"] == ""
+
+
+# ── W3 verdict (weekly scorecard cadence) ──
+
+MON_FIRST = date(2026, 9, 28)  # first Monday the cadence was armed for
+TUE_AFTER = date(2026, 9, 29)
+MON_PREV = date(2026, 9, 21)  # Monday of the deploy week (slot already passed)
+
+
+def _append_weekly(path, day: date, message_id: int, *, scheduled=True, telegram_date=None, at=None):
+    append_delivery(
+        path,
+        tier="weekly_scorecard",
+        message_id=message_id,
+        scheduled=scheduled,
+        telegram_date=telegram_date,
+        now=at or ET_1630(day),
+    )
+
+
+class TestW3Status:
+    def test_not_yet_due_before_first_expected_monday(self, tmp_path):
+        # Tonight's reality: the cadence went live 2026-09-22, so no
+        # weekly post is due until the week of 2026-09-28.
+        result = w3_status(tmp_path / "log.jsonl", now=datetime(2026, 9, 23, 2, 30))
+        assert result["w3_met"] is False
+        assert result["delivered"] is False
+        assert result["reasons"] == ["not yet due; first expected weekly post 2026-09-28"]
+
+    def test_due_week_post_met_with_evidence(self, tmp_path):
+        log = tmp_path / "log.jsonl"
+        _append_weekly(log, MON_FIRST, 5301, telegram_date=_tg_ts(MON_FIRST))
+        result = w3_status(log, now=datetime(2026, 9, 29, 2, 30))
+        assert result["w3_met"] is True
+        assert result["reasons"] == []
+        assert result["delivered"] is True
+        assert result["weekly_posts"] == 1
+        assert result["last_post"] == {"et_date": "2026-09-28", "message_id": 5301}
+        assert result["due_week_monday"] == "2026-09-28"
+        assert result["evidence"] == (
+            "weekly_scorecard 2026-09-28 message 5301; "
+            "corroborated=1 missing=0 mismatched=0"
+        )
+
+    def test_manual_weekly_send_never_counts(self, tmp_path):
+        # Invariant: a stray manual send must never satisfy (or
+        # suppress) the week's real post — only scheduler sends count.
+        log = tmp_path / "log.jsonl"
+        _append_weekly(
+            log, MON_FIRST, 5301, scheduled=False, telegram_date=_tg_ts(MON_FIRST)
+        )
+        result = w3_status(log, now=datetime(2026, 9, 29, 2, 30))
+        assert result["w3_met"] is False
+        assert result["weekly_posts"] == 0
+        assert result["reasons"] == [
+            "no scheduled weekly_scorecard in week of 2026-09-28"
+        ]
+
+    def test_daily_summary_records_do_not_count(self, tmp_path):
+        log = tmp_path / "log.jsonl"
+        _append_scheduled(log, MON_FIRST, 5300)  # daily tier, same week
+        result = w3_status(log, now=datetime(2026, 9, 29, 2, 30))
+        assert result["w3_met"] is False
+        assert result["delivered"] is False
+
+    def test_late_fire_after_midnight_counts_for_its_week(self, tmp_path):
+        # is_weekly_scorecard_slot counts any Monday-slot fire for its
+        # week; a fire delayed past ET midnight lands Tuesday but still
+        # belongs to Monday's ISO week.
+        log = tmp_path / "log.jsonl"
+        late = datetime(2026, 9, 29, 0, 5, 0)
+        ts = int(datetime(2026, 9, 29, 0, 5, 0, tzinfo=ET).timestamp())
+        _append_weekly(log, TUE_AFTER, 5302, at=late, telegram_date=ts)
+        result = w3_status(log, now=datetime(2026, 9, 29, 2, 30))
+        assert result["w3_met"] is True
+        assert result["last_post"]["et_date"] == "2026-09-29"
+
+    def test_previous_week_post_does_not_satisfy_due_week(self, tmp_path):
+        log = tmp_path / "log.jsonl"
+        _append_weekly(log, MON_PREV, 5200, telegram_date=_tg_ts(MON_PREV))
+        result = w3_status(log, now=datetime(2026, 9, 29, 2, 30))
+        assert result["w3_met"] is False
+        assert result["weekly_posts"] == 1
+        assert result["last_post"]["et_date"] == "2026-09-21"
+        assert result["reasons"] == [
+            "no scheduled weekly_scorecard in week of 2026-09-28"
+        ]
+
+    def test_monday_before_slot_still_judges_previous_week(self, tmp_path):
+        # At Monday 02:30 ET the day's slot hasn't fired; the previous
+        # Monday's week is still the one under judgment.
+        log = tmp_path / "log.jsonl"
+        _append_weekly(log, MON_FIRST, 5301, telegram_date=_tg_ts(MON_FIRST))
+        result = w3_status(log, now=datetime(2026, 10, 5, 2, 30))
+        assert result["w3_met"] is True
+        assert result["due_week_monday"] == "2026-09-28"
+
+    def test_missed_monday_blocks_until_next_week(self, tmp_path):
+        # Week of 09-28 delivered, Monday 10-05 missed: the verdict is
+        # honest about the due week that has no post.
+        log = tmp_path / "log.jsonl"
+        _append_weekly(log, MON_FIRST, 5301, telegram_date=_tg_ts(MON_FIRST))
+        result = w3_status(log, now=datetime(2026, 10, 7, 2, 30))
+        assert result["w3_met"] is False
+        assert result["due_week_monday"] == "2026-10-05"
+        assert result["reasons"] == [
+            "no scheduled weekly_scorecard in week of 2026-10-05"
+        ]
+
+    def test_clock_mismatch_blocks(self, tmp_path):
+        log = tmp_path / "log.jsonl"
+        # Local day says Monday; Telegram's server clock says Tuesday.
+        _append_weekly(
+            log, MON_FIRST, 5301, telegram_date=_tg_ts(MON_FIRST, hours_later=12)
+        )
+        result = w3_status(log, now=datetime(2026, 9, 29, 2, 30))
+        assert result["w3_met"] is False
+        assert any("mismatch" in reason for reason in result["reasons"])
+
+    def test_missing_corroboration_reported_not_blocking(self, tmp_path):
+        log = tmp_path / "log.jsonl"
+        _append_weekly(log, MON_FIRST, 5301)  # no telegram_date
+        result = w3_status(log, now=datetime(2026, 9, 29, 2, 30))
+        assert result["w3_met"] is True
+        assert "missing=1" in result["evidence"]
+        assert "corroborated=0" in result["evidence"]
+
+    def test_tier_constant_matches_engine(self):
+        from src.engine.weekly_scorecard import WEEKLY_SCORECARD_TIER
+
+        assert WEEKLY_SCORECARD == WEEKLY_SCORECARD_TIER

@@ -25,6 +25,7 @@ from src.delivery_log import (  # noqa: E402
     read_deliveries,
     verify_corroboration,
     w1_status,
+    w3_status,
 )
 
 
@@ -56,6 +57,7 @@ def main() -> int:
                 "last_scheduled_message_id": (last_scheduled or {}).get("message_id"),
                 "corroboration": corroboration,
                 "w1": w1_status(log_path),
+                "w3": w3_status(log_path),
             }
         )
     )

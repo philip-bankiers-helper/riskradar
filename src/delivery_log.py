@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -21,6 +21,15 @@ logger = logging.getLogger(__name__)
 
 ET = ZoneInfo("America/New_York")
 DAILY_SUMMARY = "daily_summary"
+
+# Mirrors WEEKLY_SCORECARD_TIER in src.engine.weekly_scorecard —
+# duplicated so this leaf module stays pandas-free; pinned equal by test.
+WEEKLY_SCORECARD = "weekly_scorecard"
+
+# First Monday 16:30 ET slot the cadence code (4688bdc, deployed
+# 2026-09-22 after that week's Monday had passed) was armed for.
+# Weeks before it were never expected to fire and never read as misses.
+FIRST_WEEKLY_MONDAY = date(2026, 9, 28)
 
 
 def _et_now(now: datetime | None) -> datetime:
@@ -227,15 +236,19 @@ def w1_status(
     }
 
 
-def verify_corroboration(records: list[dict]) -> dict:
-    """Cross-check each delivery record against Telegram's server clock.
+def verify_corroboration(
+    records: list[dict],
+    *,
+    tier: str = DAILY_SUMMARY,
+) -> dict:
+    """Cross-check delivery records against Telegram's server clock.
 
-    For every daily-summary record that carries a ``telegram_date``
+    For every record of ``tier`` that carries a ``telegram_date``
     (unix seconds echoed by the Bot API at send time), re-derive the ET
     calendar day and compare it to the locally recorded ``et_date``. A
     match means two independent clocks (local and Telegram's server)
-    agree the summary was delivered on that ET day — evidence that does
-    not rely solely on the Mac Studio's clock.
+    agree the delivery landed on that ET day — evidence that does not
+    rely solely on the Mac Studio's clock.
 
     Records without ``telegram_date`` (pre-feature history) are counted
     as ``missing`` and excluded from the verdict.
@@ -246,7 +259,7 @@ def verify_corroboration(records: list[dict]) -> dict:
     mismatches: list[dict] = []
 
     for rec in records:
-        if rec.get("tier") != DAILY_SUMMARY:
+        if rec.get("tier") != tier:
             continue
         tg_date = rec.get("telegram_date")
         if tg_date is None:
@@ -276,4 +289,137 @@ def verify_corroboration(records: list[dict]) -> dict:
         "mismatched": len(mismatches),
         "missing": missing,
         "mismatches": mismatches,
+    }
+
+
+# ── W3: weekly scorecard verdict ──
+
+
+def _iso_week_key(day: date) -> tuple[int, int]:
+    """(ISO year, ISO week) — the week identity a Monday slot owns."""
+    iso = day.isocalendar()
+    return iso[0], iso[1]
+
+
+def due_week_monday(now: datetime | None = None) -> date:
+    """Monday of the week whose 16:30 ET scorecard slot has most recently fired.
+
+    Mirrors ``is_weekly_scorecard_slot`` semantics: a Monday slot counts
+    for its week regardless of time-of-day, and on Monday itself the
+    slot only becomes due after 16:30 ET (before that, the previous
+    Monday's week is still the one under judgment).
+    """
+    moment = _et_now(now)
+    today = moment.date()
+    candidate = today - timedelta(days=today.weekday())
+    if today.weekday() == 0 and moment.time() < time(16, 30):
+        candidate -= timedelta(days=7)
+    return candidate
+
+
+def w3_status(
+    path: str | Path,
+    *,
+    now: datetime | None = None,
+    first_expected: date | None = None,
+) -> dict:
+    """Mechanical verdict for the W3 weekly-post delivery leg.
+
+    W3's runtime proof is the automatic Monday 16:30 ET scorecard post:
+    the verdict is met when the due week — the most recent Monday slot
+    that should have fired, never earlier than ``first_expected`` —
+    has a scheduled ``weekly_scorecard`` delivery record, and no
+    record's locally recorded ET day disagrees with Telegram's server
+    clock. Manual/test sends never count (same reasoning as W1: the
+    cadence is the scheduler's Monday gate, so only scheduler sends are
+    evidence), and a missing server timestamp is reported rather than
+    blocking.
+
+    Returns the verdict plus a ready-to-paste ``evidence`` line (week
+    span, message ids, corroboration counts) so the ROADMAP flip quotes
+    assembled evidence instead of hand-copied numbers.
+    """
+    if first_expected is None:
+        first_expected = FIRST_WEEKLY_MONDAY
+
+    slot_monday = due_week_monday(now)
+    due_monday = max(slot_monday, first_expected)
+    due_week = _iso_week_key(due_monday)
+
+    weekly: list[dict] = []
+    for rec in read_deliveries(path):
+        if rec.get("tier") != WEEKLY_SCORECARD or not rec.get("scheduled", False):
+            continue
+        try:
+            weekly.append(
+                {
+                    "day": date.fromisoformat(rec["et_date"]),
+                    "message_id": rec.get("message_id"),
+                    "telegram_date": rec.get("telegram_date"),
+                }
+            )
+        except (KeyError, ValueError):
+            continue
+
+    due_records = [w for w in weekly if _iso_week_key(w["day"]) == due_week]
+    corroboration = verify_corroboration(
+        [
+            {
+                "tier": WEEKLY_SCORECARD,
+                "et_date": w["day"].isoformat(),
+                "message_id": w["message_id"],
+                "telegram_date": w["telegram_date"],
+            }
+            for w in due_records
+        ],
+        tier=WEEKLY_SCORECARD,
+    )
+
+    reasons: list[str] = []
+    if slot_monday < first_expected:
+        reasons.append(
+            f"not yet due; first expected weekly post {first_expected.isoformat()}"
+        )
+    elif not due_records:
+        reasons.append(
+            f"no scheduled weekly_scorecard in week of {due_monday.isoformat()}"
+        )
+    if corroboration["mismatched"]:
+        reasons.append(f"{corroboration['mismatched']} clock mismatch(es)")
+
+    evidence = ""
+    if due_records:
+        ordered = sorted(due_records, key=lambda w: (w["day"], w["message_id"] or 0))
+        ids = ",".join(str(w["message_id"]) for w in ordered)
+        span = (
+            ordered[-1]["day"].isoformat()
+            if len(ordered) == 1
+            else f"{ordered[0]['day'].isoformat()}..{ordered[-1]['day'].isoformat()}"
+        )
+        plural = "s" if len(ordered) > 1 else ""
+        evidence = (
+            f"weekly_scorecard{plural} {span} "
+            f"message{plural} {ids}; "
+            f"corroborated={corroboration['corroborated']} "
+            f"missing={corroboration['missing']} "
+            f"mismatched={corroboration['mismatched']}"
+        )
+
+    last_post = None
+    if weekly:
+        newest = max(weekly, key=lambda w: w["day"])
+        last_post = {
+            "et_date": newest["day"].isoformat(),
+            "message_id": newest["message_id"],
+        }
+
+    return {
+        "w3_met": not reasons,
+        "due_week_monday": due_monday.isoformat(),
+        "delivered": bool(due_records),
+        "weekly_posts": len(weekly),
+        "last_post": last_post,
+        "corroboration": corroboration,
+        "reasons": reasons,
+        "evidence": evidence,
     }
