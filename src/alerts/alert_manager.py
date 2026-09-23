@@ -244,14 +244,17 @@ class AlertManager:
             return True
         return False
 
-    async def send_weekly_scorecard(self, text: str, scheduled: bool = True) -> bool:
+    async def send_weekly_scorecard(self, text: str, scheduled: bool = False) -> bool:
         """Post the W3 weekly lead-time scorecard (no cooldown).
 
         Cadence is enforced by the scheduler's Monday gate, not a
         cooldown: a stray manual send must never suppress the week's
         real post (mirrors the ``scheduled`` reasoning of the daily
         summary). Recorded under its own delivery-log tier so the
-        daily-summary streak math ignores it.
+        daily-summary streak math ignores it. ``scheduled=True`` marks
+        the launchd-driven Monday-slot send only — the default is
+        ``False`` so a manual caller that forgets the flag can never
+        forge scheduler provenance and satisfy ``w3_status()``.
         """
         if not text:
             return False

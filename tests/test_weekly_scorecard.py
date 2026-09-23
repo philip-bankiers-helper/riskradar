@@ -122,13 +122,26 @@ def _manager(tmp_path, monkeypatch, *, ok=True):
 @pytest.mark.asyncio
 async def test_send_weekly_scorecard_logs_own_tier(tmp_path, monkeypatch):
     manager = _manager(tmp_path, monkeypatch)
-    assert await manager.send_weekly_scorecard("<b>WEEKLY LEAD-TIME SCORECARD</b>")
+    assert await manager.send_weekly_scorecard(
+        "<b>WEEKLY LEAD-TIME SCORECARD</b>", scheduled=True
+    )
     records = read_deliveries(tmp_path / "delivery_log.jsonl")
     assert len(records) == 1
     rec = records[0]
     assert rec["tier"] == WEEKLY_SCORECARD_TIER
     assert rec["scheduled"] is True
     assert rec["message_id"] == 5199
+
+
+@pytest.mark.asyncio
+async def test_manual_call_defaults_to_manual_provenance(tmp_path, monkeypatch):
+    # A manual caller that forgets the flag must never forge scheduler
+    # provenance — only scheduled=True records can satisfy w3_status().
+    manager = _manager(tmp_path, monkeypatch)
+    assert await manager.send_weekly_scorecard("text")
+    records = read_deliveries(tmp_path / "delivery_log.jsonl")
+    assert records[0]["tier"] == WEEKLY_SCORECARD_TIER
+    assert records[0]["scheduled"] is False
 
 
 @pytest.mark.asyncio

@@ -592,7 +592,9 @@ async def _daily_summary_scheduler(app_state: dict) -> None:
                 if is_weekly_scorecard_slot(target):
                     try:
                         text = await produce_weekly_scorecard_text()
-                        if text and await alert_manager.send_weekly_scorecard(text):
+                        if text and await alert_manager.send_weekly_scorecard(
+                            text, scheduled=True
+                        ):
                             logger.info(
                                 "Weekly scorecard sent (message_id=%s)",
                                 alert_manager.last_message_id,
