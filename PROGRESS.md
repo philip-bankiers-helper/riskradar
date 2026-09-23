@@ -105,3 +105,12 @@ Entries are append-only.
 - Gates: 292 passed, 1 deselected (was 280). Floor 298 vs baseline 225. Secrets scan clean.
 - Deployed 4688bdc to com.kairox.riskradar ahead of today's slot: pid 39592→10386, /health 200, scheduler re-armed for 16:30 ET (day 6 of 7), fresh process at 21 FDs.
 - W2 still WAITING on Philip: config/positions.yaml remains SAMPLE. W3 remaining: verify the first automatic weekly post lands Monday 2026-09-28, then flip the increment.
+
+## 2026-09-23 — W3 night 7 (Wednesday)
+
+- Streak check: launchd service delivered the 16:30:00 ET summary for 2026-09-22 (message 5224, server-clock corroborated; checked=12, corroborated=12, mismatched=0). Scheduled streak: 6 of 7 consecutive (2026-09-17..09-22); today's 16:30 ET slot is day 7. Service was live on pid 10386, /health 200, through the check.
+- W3 step 5: the mechanical flip verdict. w3_status() in src/delivery_log.py + a w3 block in scripts/delivery_streak.py — due-week Monday-slot math (a Monday-slot fire counts for its ISO week even past ET midnight; on Monday before 16:30 ET the prior week is still under judgment), scheduled-only weekly_scorecard records (manual sends never count), tier-aware verify_corroboration(), and a first-expected clamp at 2026-09-28 so pre-cadence weeks never read as misses. Emits the ready-to-paste evidence line for the ROADMAP flip. Tonight it reads: w3_met=false, "not yet due; first expected weekly post 2026-09-28".
+- Independent review: Codex read-only pass over the verdict (runs/diagnostics/codex_w3_review_2026-09-23.md) found a real hazard — send_weekly_scorecard defaulted scheduled=True, so a future manual call that forgot the flag would forge scheduler provenance and satisfy w3_status(). Fixed (aeef90c): default now False (matching send_daily_summary), the Monday-slot scheduler call passes scheduled=True explicitly, and an anti-forgery test pins the default. Monday post behavior unchanged. W1 behavior confirmed untouched by the tier parameter.
+- Tests: 304 passed, 1 deselected (was 292; +11 verdict tests, +1 provenance test). Floor 310 vs baseline 225. Secrets scan clean. Holdout 4 passed (fresh tonight). Commits a3fa4ca, aeef90c, 6b5f0cf.
+- Deployed aeef90c to com.kairox.riskradar ahead of today's slot: pid 10386→34155, /health 200, scheduler re-armed for 16:30 ET (45895 s).
+- W2 still WAITING on Philip: config/positions.yaml remains SAMPLE. W3 remaining: first automatic weekly post Monday 2026-09-28 16:30 ET; Tuesday night's run flips the increment quoting w3_status evidence if suites stay green.
