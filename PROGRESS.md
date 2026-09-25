@@ -123,3 +123,11 @@ Entries are append-only.
 - Tests: 312 passed, 1 deselected (was 304). Floor 318 vs baseline 225. Holdout 4 passed (fresh tonight). Secrets scan clean. No service redeploy — change is offline-only (script + tests).
 - Housekeeping: yesterday's 02:10 state-tooling commit (43ece66: STATE.md, STATE.answers.md, scripts/write_state.sh) had landed unpushed; tonight's push carries it.
 - W2 still WAITING on Philip: config/positions.yaml remains SAMPLE. W3 remaining: first automatic weekly post Monday 2026-09-28 16:30 ET; Tuesday night's run flips the increment quoting w3_status evidence if suites stay green.
+
+## 2026-09-25 — Friday verification (W3 night 9)
+
+- Friday gates, all green: blocking 312 passed 1 deselected; holdout 4 passed; battle 49/49; floor 318 vs baseline 225; secrets scan clean. No features per contract.
+- Streak check: 16:30 ET summary for 2026-09-24 delivered (message 5291, server-clock corroborated; checked=14, corroborated=14, mismatched=0). Scheduled streak: 8 consecutive (2026-09-17..09-24); w1_met=true, live. Service on pid 34155 (aeef90c), /health 200, scheduler re-armed for today's 16:30 ET slot.
+- W2 UNBLOCKED: Philip's real holdings landed in 142b3e6 ("Saved by Philip from Autopilot HQ") — 6 symbols, weights sum 1.00. positions.yaml is no longer SAMPLE. Monday's run starts W2: wire holdings into the score, top-3 attributions, one action per summary, yes/no feedback path.
+- W3: w3_status not yet due — first expected automatic weekly post Monday 2026-09-28 16:30 ET; Tuesday night's run flips the increment on w3_status evidence if suites stay green.
+- Housekeeping: removed redundant config/positions.yaml.bak-20260924T174315Z (byte-identical to git history at 142b3e6~1). Tonight's push carries 142b3e6 (holdings, landed unpushed Thursday).

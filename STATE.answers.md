@@ -1,8 +1,3 @@
-## What it is
-RiskRadar watches market stress and is being prepared to tailor practical alerts to Philip's portfolio.
-
-## What is currently happening
-Daily delivery streak is 7 consecutive days through September 23; the first weekly lead-time scorecard posts Monday, September 28 at 16:30 ET, and tonight's no-send readiness check confirmed the render path works with fresh data; portfolio tailoring is waiting for Philip's holdings in config/positions.yaml.
-
-## What you can do next
-Add your holdings to config/positions.yaml.
+RiskRadar is a personal market-risk watchdog: it watches Philip's portfolio proxies, fires a daily 16:30 ET risk summary to Telegram thread 4799, and scores itself weekly on how early it warned before >=5% drawdowns.
+Right now the Friday verification gates are all green (312 passed / holdout 4 / battle 49/49 / floor 318 / secrets clean), the daily streak stands at 8 consecutive scheduled deliveries, and W3's first automatic weekly scorecard post is due Monday 2026-09-28 16:30 ET — the event that flips W3.
+Next I can start W2 on Monday: Philip's real holdings just landed in config/positions.yaml, so the score becomes portfolio-driven with top-3 attributions, one action per summary, and a yes/no feedback path.
