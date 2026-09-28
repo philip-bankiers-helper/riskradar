@@ -131,3 +131,13 @@ Entries are append-only.
 - W2 UNBLOCKED: Philip's real holdings landed in 142b3e6 ("Saved by Philip from Autopilot HQ") — 6 symbols, weights sum 1.00. positions.yaml is no longer SAMPLE. Monday's run starts W2: wire holdings into the score, top-3 attributions, one action per summary, yes/no feedback path.
 - W3: w3_status not yet due — first expected automatic weekly post Monday 2026-09-28 16:30 ET; Tuesday night's run flips the increment on w3_status evidence if suites stay green.
 - Housekeeping: removed redundant config/positions.yaml.bak-20260924T174315Z (byte-identical to git history at 142b3e6~1). Tonight's push carries 142b3e6 (holdings, landed unpushed Thursday).
+
+
+## 2026-09-28 — W2 night 1 (Monday)
+
+- Streak check: launchd service delivered the 16:30 ET summaries through 2026-09-27 (last scheduled message 5446, server-clock corroborated; checked=17, corroborated=17, mismatched=0). Scheduled streak: 11 consecutive (2026-09-17..09-27); w1_met=true, live. Today's 16:30 ET slot is also W3's first weekly scorecard post (due-week Monday = 2026-09-28; flip judgment is Tuesday night's run).
+- Critical find: the running service (pid 34155, started Wed 02:44 — BEFORE holdings landed Thu 12:43) was still scoring the 9-symbol SAMPLE book; positions load once at startup and nothing watched the file, so every summary since Thursday ran on the wrong portfolio.
+- W2 step 1: positions hot-reload (a950c52). New src/positions.py — load_positions / validate_positions / positions_signature / reload_positions_if_changed. Refusals are atomic: bad weight sum (tolerance 0.05), duplicate symbols, zero/negative weights, malformed YAML, or deletion all keep the current book with a logged reason; the signature is recorded even on refusal so a malformed file is not re-parsed every cycle, and a later fix reloads normally. compute_heat_loop consults it every cycle; an applied reload also recreates ClusteringEngine (the only symbol-keyed sticky state). 19 offline tests, including parser-consistency with Settings.from_yaml and a source guard that main.py stays wired.
+- Deployed a950c52 ahead of today's slot: pid 34155→60342, /health 200, /positions shows the real book (NVDA .10, TSLA .20, META .20, SPCX .20, GOOG .10, PLTR .20). First cycle on the real book: heat 0.19 (cool), dominant factor market, top pair NVDA↔TSLA 0.35, top attribution PLTR 26.1% heat share (rec=hold). Scheduler re-armed for 16:30 ET (46209 s). No thresholds or alert semantics touched.
+- Tests: 331 passed, 1 deselected (was 312). Floor 337 vs baseline 225. Secrets scan clean.
+- W2 next: top-3 attributions + one action inside the daily summary text (per-position attribution endpoint already live), then the yes/no feedback path.
