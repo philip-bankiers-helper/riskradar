@@ -17,7 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from src.api.routes import broadcast_heat, router, set_app_state
 from src.dashboard.views import dashboard_router, set_dashboard_state
 from src.alerts.alert_manager import AlertManager
-from src.config import DEFAULT_FACTOR_ETFS, Settings
+from src.config import DEFAULT_CONFIG, DEFAULT_FACTOR_ETFS, Settings
 from src.data.cache import Cache
 from src.data.market_data import DataPipelineManager, MarketDataClient
 from src.data.storage import Storage
@@ -34,6 +34,7 @@ from src.engine.recommendations import TradeRecommendationEngine
 from src.engine.regime import RegimeDetector
 from src.engine.throttle import PreTradeSimulator, RiskThrottle
 from src.engine.weekly_scorecard import is_weekly_scorecard_slot, produce_weekly_scorecard_text
+from src.positions import positions_signature, reload_positions_if_changed
 from src.models import (
     ClusterInfo,
     ClusterMigration,
@@ -164,8 +165,30 @@ async def compute_heat_loop(settings: Settings) -> None:
 
     storage = state.get("storage")
 
+    # W2: watch the positions file so Philip's holdings edits apply live.
+    # The startup load (Settings.from_yaml) already read this file; take its
+    # signature now so the first cycle does not redundantly reload it.
+    positions_yaml_path = Path(DEFAULT_CONFIG).parent / "positions.yaml"
+    _positions_sig = positions_signature(positions_yaml_path)
+
     while True:
         try:
+            # W2 hot-reload: let a holdings edit on disk take effect on the
+            # next cycle without a redeploy. Refused edits keep the old book.
+            outcome = reload_positions_if_changed(
+                positions_yaml_path, _positions_sig, state.get("positions", [])
+            )
+            _positions_sig = outcome.signature
+            if outcome.applied:
+                state["positions"] = outcome.positions
+                # ClusteringEngine carries symbol-keyed migration history;
+                # a new book invalidates it. Other engines are stateless
+                # per call or market-level, so they carry over.
+                cluster_engine = ClusteringEngine(
+                    correlation_threshold=0.4,
+                    migration_lookback=20,
+                )
+                state["positions_reloaded_at"] = datetime.utcnow().isoformat()
             positions: list[Position] = state.get("positions", [])
             if not positions:
                 logger.info("No positions configured — waiting...")
