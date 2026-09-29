@@ -16,6 +16,7 @@
     "id": "W3",
     "title": "prove the lead time",
     "done_when": "weekly-regenerated scorecard: warning days vs VIX>25 and 50-day MA for every >=5% drawdown in 24 months, including losses",
-    "passes": false
+    "passes": true,
+    "evidence": "first automatic weekly post landed 2026-09-28 16:30 ET, message 5458, corroborated=1 missing=0 mismatched=0; smoke render 2026-09-24: window 2024-09-24→2026-09-23, 3 episodes ≥5% incl. -18.8% loss (2025-02-19→04-08), VIX 3/3 hits median lead 24 d, MA 3/3 hits median lead 43 d, unrecovered losses counted; suite 331 passed 1 deselected 2026-09-29; w3_status verdict w3_met=true (weekly_posts=1)"
   }
 ]
