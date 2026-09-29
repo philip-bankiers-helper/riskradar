@@ -71,6 +71,7 @@ class AlertManager:
         telegram_thread_id: int | None = None,
         cooldown_minutes: dict[str, int] | None = None,
         delivery_log_path: str = "",
+        feedback_log_path: str = "",
     ):
         self.bot_token = telegram_bot_token
         self.chat_id = telegram_chat_id
@@ -78,6 +79,7 @@ class AlertManager:
         self.last_message_id: int | None = None
         self.last_telegram_date: int | None = None
         self.delivery_log_path = delivery_log_path
+        self.feedback_log_path = feedback_log_path
         self._base_url = f"https://api.telegram.org/bot{telegram_bot_token}" if telegram_bot_token else ""
 
         # Cooldown tracking: tier -> last send timestamp
@@ -220,6 +222,26 @@ class AlertManager:
             msg += f"\n\n<b>Recommendations:</b> {recommendations.summary}"
             for act in recommendations.actions[:3]:
                 msg += f"\n  {act.urgency.upper()}: {act.action} {act.symbol} ({act.reason})"
+
+        # W2 feedback loop: surface the latest recorded tap, then ask.
+        # The ask rides every daily summary (it IS the feedback request);
+        # the shared-bot constraint means the "tap" is a one-word topic
+        # reply recorded via the local API — see src/feedback.py.
+        if self.feedback_log_path:
+            from src.feedback import last_feedback
+
+            try:
+                fb = last_feedback(self.feedback_log_path)
+            except Exception as exc:  # noqa: BLE001 - display must never break send
+                logger.warning("Could not read feedback log: %s", exc)
+                fb = None
+            if fb:
+                mark = "\U0001f44d" if fb.get("vote") == "yes" else "\U0001f44e"
+                msg += (
+                    f"\n\n<b>Last feedback:</b> {mark} {str(fb.get('vote', '?')).upper()}"
+                    f" ({fb.get('et_date', '?')})"
+                )
+        msg += "\n\nWas this useful? Reply <b>YES</b> / <b>NO</b> in this topic."
 
         # Data quality
         if data_quality:

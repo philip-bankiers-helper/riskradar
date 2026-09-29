@@ -160,8 +160,10 @@ async def compute_heat_loop(settings: Settings) -> None:
         telegram_thread_id=settings.telegram_thread_id,
         cooldown_minutes=alert_cooldowns,
         delivery_log_path=settings.delivery_log_path,
+        feedback_log_path=settings.feedback_log_path,
     )
     state["alert_manager"] = alert_manager
+    state["feedback_log_path"] = settings.feedback_log_path
 
     storage = state.get("storage")
 

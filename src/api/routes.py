@@ -35,6 +35,37 @@ def set_app_state(state: dict) -> None:
     _app_state = state
 
 
+def _feedback_log_path() -> str:
+    """Feedback log location: injected state wins, config default backs it."""
+    from src.config import PROJECT_ROOT
+
+    return _app_state.get("feedback_log_path") or str(
+        PROJECT_ROOT / "data" / "feedback_log.jsonl"
+    )
+
+
+@router.get("/feedback")
+async def get_last_feedback():
+    """Latest recorded yes/no verdict on the daily summary (or null)."""
+    from src.feedback import last_feedback
+
+    return {"feedback": last_feedback(_feedback_log_path())}
+
+
+@router.post("/feedback", status_code=200)
+async def record_feedback(vote: str, et_date: str | None = None, source: str = "api"):
+    """Record Philip's yes/no verdict. Query params keep the tap path curl-able."""
+    from src.feedback import append_feedback
+
+    try:
+        record = append_feedback(
+            _feedback_log_path(), vote=vote, et_date=et_date, source=source
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"recorded": record}
+
+
 @router.get("/health")
 async def health_check():
     """System health check."""
