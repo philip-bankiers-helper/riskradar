@@ -395,6 +395,46 @@ class TestDailySummary:
             assert stamped in {before, after}
 
     @pytest.mark.asyncio
+    async def test_daily_summary_empty_actions_renders_explicit_hold(self):
+        """W2: calm days (empty action list) still carry one action line."""
+        mgr = AlertManager(telegram_bot_token="test", telegram_chat_id="123")
+        heat = _make_heat(0.24, HeatLevel.COOL)
+
+        calm = _make_recommendations()
+        calm.actions = []
+        calm.summary = "No actions needed. Heat 0.240 in normal regime."
+
+        with patch.object(mgr, "_send_telegram", new_callable=AsyncMock, return_value=True) as mock_send:
+            result = await mgr.send_daily_summary(
+                heat_score=heat,
+                regime_state={"regime": "normal", "confidence": 0.6},
+                attribution=_make_attribution(),
+                recommendations=calm,
+            )
+            assert result is True
+            msg = mock_send.call_args[0][0]
+            assert "<b>Recommendations:</b> No actions needed." in msg
+            assert "HOLD: hold all positions (no changes recommended)" in msg
+
+    @pytest.mark.asyncio
+    async def test_daily_summary_missing_recommendations_renders_hold_fallback(self):
+        """W2: even a missing package yields an explicit hold, never a silent gap."""
+        mgr = AlertManager(telegram_bot_token="test", telegram_chat_id="123")
+        heat = _make_heat(0.24, HeatLevel.COOL)
+
+        with patch.object(mgr, "_send_telegram", new_callable=AsyncMock, return_value=True) as mock_send:
+            result = await mgr.send_daily_summary(
+                heat_score=heat,
+                regime_state=None,
+                attribution=None,
+                recommendations=None,
+            )
+            assert result is True
+            msg = mock_send.call_args[0][0]
+            assert "unavailable this cycle" in msg
+            assert "HOLD: hold all positions" in msg
+
+    @pytest.mark.asyncio
     async def test_daily_summary_cooldown(self):
         mgr = AlertManager(telegram_bot_token="test", telegram_chat_id="123")
         mgr._mark_sent(AlertTier.DAILY_SUMMARY)

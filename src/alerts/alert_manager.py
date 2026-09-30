@@ -217,11 +217,23 @@ class AlertManager:
             for a in attribution[:3]:
                 msg += f"\n  {a.symbol}: {a.heat_share:.0%} heat share ({a.recommendation})"
 
-        # Recommendations summary
-        if recommendations and recommendations.actions:
+        # W2: the summary must carry an action every day. An empty
+        # action list (calm days: "No actions needed. Heat ...")
+        # renders the explicit hold instead of dropping the block;
+        # a missing recommendation package gets an honest no-signal
+        # fallback. Display only — thresholds and semantics untouched.
+        if recommendations:
             msg += f"\n\n<b>Recommendations:</b> {recommendations.summary}"
-            for act in recommendations.actions[:3]:
-                msg += f"\n  {act.urgency.upper()}: {act.action} {act.symbol} ({act.reason})"
+            if recommendations.actions:
+                for act in recommendations.actions[:3]:
+                    msg += f"\n  {act.urgency.upper()}: {act.action} {act.symbol} ({act.reason})"
+            else:
+                msg += "\n  HOLD: hold all positions (no changes recommended)"
+        else:
+            msg += (
+                "\n\n<b>Recommendations:</b> unavailable this cycle"
+                "\n  HOLD: hold all positions (no recommendation signal)"
+            )
 
         # W2 feedback loop: surface the latest recorded tap, then ask.
         # The ask rides every daily summary (it IS the feedback request);
