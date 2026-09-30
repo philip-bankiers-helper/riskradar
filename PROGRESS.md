@@ -151,3 +151,12 @@ Entries are append-only.
 - Deployed ef49a1b to com.kairox.riskradar ahead of today's slot: pid 60342→7101, scheduler re-armed for 16:30 ET (46083 s), /positions shows the real book, GET /feedback returns {"feedback": null} (new code live; no test vote written to the production log — POST is covered by tests, the first real record must be Philip's).
 - Gates: 346 passed, 1 deselected (was 331). Holdout 4 passed (fresh tonight). Floor script not run tonight (floor check is a Friday gate; suite count grew). Secrets scan clean.
 - W2 remaining: Philip's first real yes/no recorded and surfaced in a live summary — then flip. Nothing is waiting on setup; he just replies in the topic after today's 16:30 ET summary.
+
+## 2026-09-30 — W2 night 3 (Wednesday): one action per summary, guaranteed
+
+- Streak check: launchd service delivered the 16:30 ET summary for 2026-09-29 (message 5462, server-clock corroborated; checked=19, corroborated=19, mismatched=0). Scheduled streak: 13 consecutive (2026-09-17..09-29); w1_met=true, live. Today's 16:30 ET slot is day 14. w3_met=true (weekly post 5458 standing).
+- Gap find: calm days return "No actions needed. Heat X in Y regime." with an empty actions list, and the summary render dropped the whole Recommendations block — so cool-day summaries carried top-3 attributions but ZERO action lines, violating W2's "one action per summary" done_when. Last night's cycle log confirmed the realistic path (heat 0.236, no actions).
+- W2 step 3 (41b5d71): empty action list now renders "HOLD: hold all positions (no changes recommended)" under the Recommendations header; a missing recommendation package renders "unavailable this cycle" + the same explicit hold. Display only — thresholds and alert semantics untouched. 2 offline tests pin both paths.
+- Deployed 41b5d71 to com.kairox.riskradar ahead of today's slot: pid 7101→81510, /health 200, /positions shows the real 6-symbol book, GET /feedback {"feedback":null}, scheduler re-armed for 16:30 ET (46399 s).
+- Tests: 348 passed, 1 deselected (was 346). Secrets scan clean. Pushed 0a87e42..41b5d71.
+- W2 remaining: Philip's first real YES/NO reply in topic 4799 (recorded via scripts/record_feedback.py) surfaced in a live summary — then flip. Nothing waiting on setup; the ask rides every 16:30 ET summary.

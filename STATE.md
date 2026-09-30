@@ -1,16 +1,16 @@
-FRONTIER: increment=W2 status=not met tests=331/332 holdout=4 push=ok
+FRONTIER: increment=W2 status=not met tests=346/347 holdout=4 push=ok
 
 ## What it is
-What it is hasn't changed: RiskRadar scores the heat of Philip's real portfolio and fires a daily 16:30 ET summary to Telegram topic 4799, plus a weekly lead-time scorecard on Mondays.
+# STATE.answers
 
 ## What is currently happening
-W3 is now MET and flipped: the first automatic weekly scorecard landed Monday 2026-09-28 (message 5458); the daily streak is 12 consecutive; tonight's W2 step shipped the yes/no feedback path — the summary now asks "Was this useful? Reply YES/NO", the reply is recorded via the local API or scripts/record_feedback.py (the bot token turned out to be shared with the Hermes gateway, so buttons+getUpdates were rejected), and the next summary shows the verdict. Deployed as pid 7101, verified on /positions and /feedback.
+**What is it?** RiskRadar is a personal portfolio risk monitor: it scores portfolio heat daily from real holdings (NVDA, TSLA, META, SPCX, GOOG, PLTR), posts a 16:30 ET summary with top-3 attributions and one explicit action to Telegram topic 4799, and posts a weekly lead-time scorecard on Mondays proving how many days of warning VIX/MA signals gave before every ≥5% drawdown.
 
 ## What you can do next
-Next: Philip's first real YES/NO reply in topic 4799 gets recorded and shows up in a live summary — that closes W2's done_when and the increment flips. No Philip-side setup is required beyond replying.
+**What is currently happening?** W1 and W3 are met and standing (13-day delivery streak; first automatic weekly scorecard landed as message 5458). W2 is open: holdings drive the score, every summary now carries top-3 attributions plus a guaranteed action line (explicit HOLD on calm days, shipped tonight in 41b5d71 and deployed ahead of the 16:30 ET slot) — the only missing piece is Philip's first real YES/NO reply in the topic.
 
 ## Sources and tools
 Mac Studio · /Users/kairox/riskradar · nightly 02:30 Mon–Fri · Telegram Kairox HQ topic 4799 · github.com/philip-bankiers-helper/riskradar · Substack none
 
 ## Document details
-_written nightly by Manager Hermes · 2026-09-29T07:43:09Z_
+_written nightly by Manager Hermes · 2026-09-30T07:37:42Z_
