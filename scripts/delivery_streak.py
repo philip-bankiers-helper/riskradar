@@ -25,8 +25,25 @@ from src.delivery_log import (  # noqa: E402
     read_deliveries,
     verify_corroboration,
     w1_status,
+    w2_status,
     w3_status,
 )
+
+
+def _w2_block(log_path: str) -> dict:
+    """w2_status plus the repo book as expected positions (best effort)."""
+    feedback_path = os.environ.get(
+        "RISKRADAR_FEEDBACK_LOG",
+        str(PROJECT_ROOT / "data" / "feedback_log.jsonl"),
+    )
+    expected: list[str] | None = None
+    try:
+        from src.positions import load_positions
+
+        expected = [p.symbol for p in load_positions(PROJECT_ROOT / "config" / "positions.yaml")]
+    except Exception:  # noqa: BLE001 - verdict reports, never crashes
+        expected = None
+    return w2_status(log_path, feedback_path, expected_positions=expected)
 
 
 def main() -> int:
@@ -57,6 +74,7 @@ def main() -> int:
                 "last_scheduled_message_id": (last_scheduled or {}).get("message_id"),
                 "corroboration": corroboration,
                 "w1": w1_status(log_path),
+                "w2": _w2_block(log_path),
                 "w3": w3_status(log_path),
             }
         )

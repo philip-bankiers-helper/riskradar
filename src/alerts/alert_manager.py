@@ -61,6 +61,23 @@ DEFAULT_COOLDOWNS = {
 }
 
 
+def summary_action_line(recommendations: PortfolioRecommendation | None) -> str:
+    """The one action line every daily summary carries (W2 guarantee).
+
+    Single source of truth for both the rendered Recommendations block
+    and the delivery record's ``action`` evidence field, so what
+    ``w2_status`` verifies is exactly what the summary displayed:
+    first recommended action, or the explicit HOLD when the action list
+    is empty / the recommendation package is missing.
+    """
+    if recommendations and recommendations.actions:
+        act = recommendations.actions[0]
+        return f"{act.urgency.upper()}: {act.action} {act.symbol} ({act.reason})"
+    if recommendations:
+        return "HOLD: hold all positions (no changes recommended)"
+    return "HOLD: hold all positions (no recommendation signal)"
+
+
 class AlertManager:
     """Multi-tier alerting with rate limiting, cooldowns, and rich formatting."""
 
@@ -228,11 +245,11 @@ class AlertManager:
                 for act in recommendations.actions[:3]:
                     msg += f"\n  {act.urgency.upper()}: {act.action} {act.symbol} ({act.reason})"
             else:
-                msg += "\n  HOLD: hold all positions (no changes recommended)"
+                msg += f"\n  {summary_action_line(recommendations)}"
         else:
             msg += (
                 "\n\n<b>Recommendations:</b> unavailable this cycle"
-                "\n  HOLD: hold all positions (no recommendation signal)"
+                f"\n  {summary_action_line(recommendations)}"
             )
 
         # W2 feedback loop: surface the latest recorded tap, then ask.
@@ -267,6 +284,14 @@ class AlertManager:
             if self.delivery_log_path:
                 from src.delivery_log import append_delivery
 
+                evidence_positions = (
+                    sorted({a.symbol for a in attribution}) if attribution else None
+                )
+                evidence_attributions = (
+                    [(a.symbol, float(a.heat_share)) for a in attribution[:3]]
+                    if attribution
+                    else None
+                )
                 append_delivery(
                     self.delivery_log_path,
                     tier=AlertTier.DAILY_SUMMARY.value,
@@ -274,6 +299,9 @@ class AlertManager:
                     heat_score=heat_score.score,
                     scheduled=scheduled,
                     telegram_date=self.last_telegram_date,
+                    positions=evidence_positions,
+                    top_attributions=evidence_attributions,
+                    action=summary_action_line(recommendations),
                 )
             return True
         return False

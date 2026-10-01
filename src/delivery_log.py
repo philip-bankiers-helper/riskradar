@@ -49,6 +49,9 @@ def append_delivery(
     heat_score: float | None = None,
     scheduled: bool = False,
     telegram_date: int | None = None,
+    positions: list[str] | None = None,
+    top_attributions: list[tuple[str, float]] | None = None,
+    action: str | None = None,
     now: datetime | None = None,
 ) -> bool:
     """Append one delivery record. Never raises into the alert path.
@@ -57,6 +60,14 @@ def append_delivery(
     seconds) echoed by the Bot API alongside ``message_id``. Storing
     it makes each record self-corroborating: the ET day key can be
     re-derived from Telegram's own clock, not just the local one.
+
+    The W2 evidence fields (``positions`` = the scored book's symbols,
+    ``top_attributions`` = top-3 (symbol, heat_share) pairs, ``action``
+    = the action line the summary carried) are recorded only when
+    supplied, so non-daily tiers keep their schema. They let
+    ``w2_status`` verify mechanically that holdings drove the score and
+    every summary carried attributions and an action — the same
+    self-evidence pattern as ``telegram_date``.
     """
     try:
         moment = _et_now(now)
@@ -72,6 +83,14 @@ def append_delivery(
             "heat_score": heat_score,
             "telegram_date": telegram_date,
         }
+        if positions is not None:
+            record["positions"] = list(positions)
+        if top_attributions is not None:
+            record["top_attributions"] = [
+                [symbol, float(share)] for symbol, share in top_attributions
+            ]
+        if action is not None:
+            record["action"] = str(action)
         target = Path(path)
         target.parent.mkdir(parents=True, exist_ok=True)
         with target.open("a", encoding="utf-8") as fh:
@@ -420,6 +439,197 @@ def w3_status(
         "weekly_posts": len(weekly),
         "last_post": last_post,
         "corroboration": corroboration,
+        "reasons": reasons,
+        "evidence": evidence,
+    }
+
+
+# ── W2: portfolio-driven summary verdict ──
+
+
+# First 16:30 ET slot expected to carry the W2 evidence fields
+# (positions / top_attributions / action). Deployed ahead of this
+# slot; earlier records never carried the fields and never read as
+# failures.
+FIRST_W2_EVIDENCE = date(2026, 10, 1)
+
+
+def _tapped_et_moment(record: dict) -> datetime | None:
+    """Feedback ``tapped_at`` (ISO UTC) as an ET moment, or None."""
+    raw = record.get("tapped_at")
+    if not isinstance(raw, str):
+        return None
+    try:
+        ts = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if ts.tzinfo is None:
+        return None
+    return ts.astimezone(ET)
+
+
+def w2_status(
+    path: str | Path,
+    feedback_path: str | Path,
+    *,
+    now: datetime | None = None,
+    first_expected: date | None = None,
+    expected_positions: list[str] | None = None,
+) -> dict:
+    """Mechanical verdict for the W2 done_when.
+
+    W2 is met when, for every scheduled daily summary since
+    ``first_expected`` (the first slot that carried W2 evidence
+    fields): (a) the record proves the scored book (``positions``) and
+    carries top-3 ``top_attributions`` and a non-empty ``action`` —
+    and, when ``expected_positions`` is supplied, the latest record's
+    book equals it (holdings from the repo actually drove the score);
+    and (b) Philip's tap exists in the feedback log and has been
+    surfaced — a scheduled summary was delivered strictly after the
+    tap (same-day sends must postdate the tap's moment, since the
+    summary reads the feedback log at send time). Manual/test sends
+    never count, matching w1/w3 provenance rules.
+
+    Returns the verdict plus a ready-to-paste ``evidence`` line so the
+    ROADMAP flip quotes assembled evidence instead of hand-copied
+    numbers.
+    """
+    if first_expected is None:
+        first_expected = FIRST_W2_EVIDENCE
+    _et_now(now)  # validates/normalizes `now` semantics like w1/w3
+
+    records: list[dict] = []
+    for rec in read_deliveries(path):
+        if rec.get("tier") != DAILY_SUMMARY or not rec.get("scheduled", False):
+            continue
+        try:
+            if date.fromisoformat(rec["et_date"]) < first_expected:
+                continue
+        except (KeyError, ValueError):
+            continue
+        records.append(rec)
+
+    def _carries(rec: dict) -> bool:
+        return bool(
+            rec.get("positions")
+            and rec.get("top_attributions")
+            and isinstance(rec.get("action"), str)
+            and rec.get("action").strip()
+        )
+
+    payload_records = [r for r in records if _carries(r)]
+    bare_records = [r for r in records if not _carries(r)]
+
+    reasons: list[str] = []
+    if not records:
+        reasons.append(
+            f"no scheduled daily summaries since {first_expected.isoformat()} yet"
+        )
+    elif bare_records:
+        days = ", ".join(str(r.get("et_date")) for r in bare_records[:3])
+        reasons.append(
+            f"{len(bare_records)} scheduled summaries missing W2 payload ({days})"
+        )
+
+    book_match: bool | None = None
+    if expected_positions is not None and payload_records:
+        latest_book = payload_records[-1].get("positions") or []
+        book_match = set(s.upper() for s in latest_book) == set(
+            s.upper() for s in expected_positions
+        )
+        if not book_match:
+            reasons.append("latest summary's scored book != repo positions")
+
+    # Local import: src.feedback imports this module (ET); importing at
+    # module level would be circular.
+    from src.feedback import last_feedback
+
+    try:
+        fb = last_feedback(feedback_path)
+    except Exception:  # noqa: BLE001 - a missing log is just "no tap yet"
+        fb = None
+
+    surfaced: dict | None = None
+    vote = None
+    vote_day: date | None = None
+    if fb is None:
+        reasons.append("waiting for Philip's first YES/NO tap")
+    else:
+        vote = str(fb.get("vote", "?"))
+        try:
+            vote_day = date.fromisoformat(str(fb["et_date"]))
+        except (KeyError, ValueError):
+            vote_day = None
+            reasons.append("latest feedback record has no parseable et_date")
+        if vote_day is not None:
+            tapped = _tapped_et_moment(fb)
+            for rec in payload_records:
+                try:
+                    day = date.fromisoformat(rec["et_date"])
+                except (KeyError, ValueError):
+                    continue
+                later = day > vote_day
+                if day == vote_day and tapped is not None:
+                    try:
+                        sent = datetime.strptime(rec["et_time"], "%H:%M:%S").time()
+                    except (KeyError, ValueError):
+                        sent = None
+                    later = sent is not None and sent > tapped.time()
+                if later:
+                    surfaced = rec
+
+    if fb is not None and vote_day is not None and surfaced is None:
+        reasons.append(
+            f"tap {vote} {vote_day.isoformat()} not yet surfaced in a summary"
+        )
+
+    evidence = ""
+    if payload_records and fb is not None and surfaced is not None:
+        ids = ", ".join(str(r.get("message_id")) for r in payload_records)
+        span = (
+            f"{payload_records[0].get('et_date')}.."
+            f"{payload_records[-1].get('et_date')}"
+        )
+        book = (
+            "book==repo"
+            if book_match
+            else "book==" + ",".join(payload_records[-1].get("positions") or [])
+        )
+        evidence = (
+            f"{span} messages {ids} carrying top-3 attributions + action; "
+            f"{book}; "
+            f"feedback {vote} {vote_day.isoformat()} surfaced in message "
+            f"{surfaced.get('message_id')}"
+        )
+    elif payload_records:
+        ids = ", ".join(str(r.get("message_id")) for r in payload_records)
+        span = (
+            f"{payload_records[0].get('et_date')}.."
+            f"{payload_records[-1].get('et_date')}"
+        )
+        evidence = (
+            f"{span} messages {ids} carrying top-3 attributions + action; "
+            "no tap recorded yet"
+        )
+
+    return {
+        "w2_met": not reasons,
+        "first_expected": first_expected.isoformat(),
+        "summaries_expected": len(records),
+        "summaries_with_payload": len(payload_records),
+        "last_payload": (
+            {
+                "et_date": payload_records[-1].get("et_date"),
+                "message_id": payload_records[-1].get("message_id"),
+            }
+            if payload_records
+            else None
+        ),
+        "book_matches_repo": book_match,
+        "feedback": (
+            None if fb is None else {"vote": vote, "et_date": str(fb.get("et_date"))}
+        ),
+        "surfaced_message_id": (surfaced or {}).get("message_id"),
         "reasons": reasons,
         "evidence": evidence,
     }
