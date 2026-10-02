@@ -169,3 +169,11 @@ Entries are append-only.
 - Deployed bbfa556 to com.kairox.riskradar ahead of today's slot: pid 81510→29794, /health 200, scheduler re-armed (46214 s), /positions shows the real 6-symbol book, GET /feedback {"feedback":null}.
 - Gates: 359 passed, 1 deselected (was 348; +11 w2 verdict tests). Holdout 4 passed (fresh tonight). Battle 49/49. Floor 365 vs baseline 225. Secrets scan clean.
 - W2 remaining: Philip's first real YES/NO reply in topic 4799 (relayed via scripts/record_feedback.py) surfaced in the next 16:30 ET summary — then flip on w2_status evidence. Nothing waiting on setup.
+
+## 2026-10-02 — Friday verification: all gates green; W2 blocked only on the tap
+
+- Friday gates (no features tonight): pytest 359 passed, 1 deselected; holdout 4 passed (fresh this session); battle 49/49; floor 365 vs baseline 225; secrets scan clean.
+- Streak check: 16:30 ET summary for 2026-10-01 delivered (message 5469, server-clock corroborated; checked=21, corroborated=21, mismatched=0). Scheduled streak: 15 consecutive (2026-09-17..2026-10-01); w1_met=true, live. w3_met=true (weekly post 5458 standing; next weekly slot Monday 2026-10-05). Service live on pid 29794, /positions shows the real 6-symbol book.
+- W2 verdict: payload leg GREEN — every scheduled summary since FIRST_W2_EVIDENCE (2026-10-01) carries positions + top-3 attributions + the displayed action line (msg 5469); latest record's book equals the repo config book. w2_met=false with the single reason "waiting for Philip's first YES/NO tap" (feedback log empty).
+- Escalated the tap to HQ Inbox (card 33e08cea38d32af9c2d1b2ba0b83c1d63a7fabc3, ws-riskradar, created 2026-10-02, priority 50): one-word YES or NO reply in topic 4799 after any 16:30 ET summary. Do NOT re-ask — every other leg is done and verified.
+- Done: Friday verification complete; no code changes; tree clean. Waiting on: Philip's tap, nothing else.
