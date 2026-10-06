@@ -5,7 +5,10 @@ Tiers:
 - LEVEL_CHANGE: Heat level transitions (cool->warm, warm->hot, etc.)
 - THRESHOLD_CROSS: Specific threshold crossed
 - REGIME_SHIFT: Regime detector transition
-- EMERGENCY: Emergency broadcast (no cooldown)
+- EMERGENCY: Emergency broadcast — first hit immediate; while the level
+  simply persists, re-broadcasts are capped at one every
+  EMERGENCY_REBROADCAST_MINUTES (de-escalation and re-entry keep
+  alerting through LEVEL_CHANGE).
 """
 
 from __future__ import annotations
@@ -52,12 +55,21 @@ class AlertTier(str, Enum):
     EMERGENCY = "emergency"
 
 
+# Re-broadcast cadence for a PERSISTING emergency. The first emergency
+# broadcast is immediate; repeats while the level merely persists are
+# capped at one per interval. De-escalation and re-entry still alert
+# immediately through LEVEL_CHANGE. Introduced after the 2026-10-03..05
+# storm: with cooldown 0, every 5-minute compute cycle re-broadcast the
+# identical alert while the score stayed clipped at 1.00 — ~850 messages
+# in 3 days (HQ operator card: "quiet the repeat").
+EMERGENCY_REBROADCAST_MINUTES = 360
+
 DEFAULT_COOLDOWNS = {
     AlertTier.DAILY_SUMMARY: 1440,     # 24 hours
     AlertTier.LEVEL_CHANGE: 30,        # 30 minutes
     AlertTier.THRESHOLD_CROSS: 60,     # 1 hour
     AlertTier.REGIME_SHIFT: 15,        # 15 minutes
-    AlertTier.EMERGENCY: 0,            # No cooldown
+    AlertTier.EMERGENCY: EMERGENCY_REBROADCAST_MINUTES,
 }
 
 
@@ -132,6 +144,34 @@ class AlertManager:
         """Record that an alert was sent for this tier."""
         self._last_sent[tier.value] = time.time()
 
+    def _record_delivery(self, tier: AlertTier, heat_score: HeatScore) -> None:
+        """Record an alert-tier send in the delivery log (observability).
+
+        Alert sends use their own ``alert_*`` tiers, so every consumer
+        that filters by ``daily_summary`` / ``weekly_scorecard`` (daily
+        streak, w1/w2/w3 verdicts, corroboration) ignores them. They
+        exist so an alert storm is visible in the same log the nightly
+        runner already reads — the 2026-10-03..05 storm (~850 emergency
+        broadcasts) was invisible to three nightly verifications because
+        alert sends left no delivery-log trace. Never raises into the
+        alert path.
+        """
+        if not self.delivery_log_path:
+            return
+        try:
+            from src.delivery_log import append_delivery
+
+            append_delivery(
+                self.delivery_log_path,
+                tier=f"alert_{tier.value}",
+                message_id=self.last_message_id,
+                heat_score=heat_score.score,
+                scheduled=False,
+                telegram_date=self.last_telegram_date,
+            )
+        except Exception as exc:  # noqa: BLE001 - evidence must never break alerting
+            logger.warning("Failed to record alert delivery: %s", exc)
+
     async def check_and_alert(
         self,
         heat_score: HeatScore,
@@ -155,6 +195,7 @@ class AlertManager:
                     self._mark_sent(AlertTier.EMERGENCY)
                     sent.append(AlertTier.EMERGENCY.value)
                     self._record_alert(AlertTier.EMERGENCY, heat_score.score)
+                    self._record_delivery(AlertTier.EMERGENCY, heat_score)
 
         # 2. Level change check
         if self._previous_heat_level is not None and heat_score.level != self._previous_heat_level:
@@ -166,6 +207,7 @@ class AlertManager:
                     self._mark_sent(AlertTier.LEVEL_CHANGE)
                     sent.append(AlertTier.LEVEL_CHANGE.value)
                     self._record_alert(AlertTier.LEVEL_CHANGE, heat_score.score)
+                    self._record_delivery(AlertTier.LEVEL_CHANGE, heat_score)
 
         self._previous_heat_level = heat_score.level
 
@@ -185,6 +227,7 @@ class AlertManager:
                     self._mark_sent(AlertTier.REGIME_SHIFT)
                     sent.append(AlertTier.REGIME_SHIFT.value)
                     self._record_alert(AlertTier.REGIME_SHIFT, heat_score.score)
+                    self._record_delivery(AlertTier.REGIME_SHIFT, heat_score)
 
         self._previous_regime = current_regime
 

@@ -176,6 +176,79 @@ class TestDailyStreak:
 # ── AlertManager integration ──
 
 
+class TestAlertTierRecords:
+    """Alert sends leave delivery-log traces under alert_* tiers.
+
+    The 2026-10-03..05 emergency storm (~850 broadcasts) was invisible to
+    the nightly verification because alert sends wrote no records. These
+    pins: every real alert send IS recorded, under a tier no delivery
+    consumer counts, and failed sends record nothing.
+    """
+
+    def _manager(self, tmp_path):
+        return AlertManager(
+            telegram_bot_token="test",
+            telegram_chat_id="123",
+            telegram_thread_id=4799,
+            delivery_log_path=str(tmp_path / "delivery_log.jsonl"),
+        )
+
+    @pytest.mark.asyncio
+    async def test_emergency_send_records_alert_tier(self, tmp_path):
+        mgr = self._manager(tmp_path)
+        mgr._previous_heat_level = HeatLevel.EMERGENCY  # suppress level change
+
+        async def fake_send(message):
+            mgr.last_message_id = 777
+            mgr.last_telegram_date = 1_800_000_000
+            return True
+
+        with patch.object(mgr, "_send_telegram", new=fake_send):
+            sent = await mgr.check_and_alert(
+                heat_score=_make_heat(1.0, HeatLevel.EMERGENCY),
+                previous_heat=None,
+                regime_state=None,
+                throttle_state=None,
+                attribution=None,
+                recommendations=None,
+            )
+        assert "emergency" in sent
+        records = read_deliveries(tmp_path / "delivery_log.jsonl")
+        assert len(records) == 1
+        assert records[0]["tier"] == "alert_emergency"
+        assert records[0]["scheduled"] is False
+        assert records[0]["message_id"] == 777
+        assert records[0]["telegram_date"] == 1_800_000_000
+
+    @pytest.mark.asyncio
+    async def test_failed_alert_send_records_nothing(self, tmp_path):
+        mgr = self._manager(tmp_path)
+        mgr._previous_heat_level = HeatLevel.EMERGENCY
+        with patch.object(mgr, "_send_telegram", new=AsyncMock(return_value=False)):
+            sent = await mgr.check_and_alert(
+                heat_score=_make_heat(1.0, HeatLevel.EMERGENCY),
+                previous_heat=None,
+                regime_state=None,
+                throttle_state=None,
+                attribution=None,
+                recommendations=None,
+            )
+        assert "emergency" not in sent
+        assert read_deliveries(tmp_path / "delivery_log.jsonl") == []
+
+    def test_alert_records_never_count_as_deliveries(self, tmp_path):
+        # A storm day in the log must not inflate the delivery streak:
+        # three alert records + one real scheduled summary -> streak 1.
+        log = tmp_path / "delivery_log.jsonl"
+        append_delivery(log, tier="daily_summary", message_id=1, scheduled=True, now=ET_1630(TODAY))
+        for i in range(3):
+            append_delivery(log, tier="alert_emergency", message_id=100 + i, now=ET_1630(TODAY))
+        streak = daily_streak(log)
+        assert streak["streak"] == 1
+        # But the storm stays visible to anyone reading the raw log.
+        assert len(read_deliveries(log)) == 4
+
+
 class TestAlertManagerDeliveryLog:
     def _manager(self, tmp_path):
         return AlertManager(

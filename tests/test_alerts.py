@@ -9,7 +9,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.alerts.alert_manager import AlertManager, AlertTier, DEFAULT_COOLDOWNS
+from src.alerts.alert_manager import (
+    AlertManager,
+    AlertTier,
+    DEFAULT_COOLDOWNS,
+    EMERGENCY_REBROADCAST_MINUTES,
+)
 from src.delivery_log import ET
 from src.models import (
     HeatLevel,
@@ -116,7 +121,7 @@ class TestAlertManagerInit:
         mgr = AlertManager()
         assert mgr._cooldowns["daily_summary"] == 1440
         assert mgr._cooldowns["level_change"] == 30
-        assert mgr._cooldowns["emergency"] == 0
+        assert mgr._cooldowns["emergency"] == EMERGENCY_REBROADCAST_MINUTES
 
     def test_custom_cooldowns(self):
         mgr = AlertManager(cooldown_minutes={"level_change": 60, "emergency": 5})
@@ -144,10 +149,14 @@ class TestCooldowns:
         mgr._mark_sent(AlertTier.LEVEL_CHANGE)
         assert mgr._is_on_cooldown(AlertTier.LEVEL_CHANGE)
 
-    def test_emergency_never_on_cooldown(self):
+    def test_emergency_rebroadcast_cooldown(self):
+        # Contract changed 2026-10-06 (HQ "quiet the repeat" card): a
+        # PERSISTING emergency re-broadcasts at most once per
+        # EMERGENCY_REBROADCAST_MINUTES instead of every cycle.
         mgr = AlertManager()
         mgr._mark_sent(AlertTier.EMERGENCY)
-        # Emergency has 0 cooldown
+        assert mgr._is_on_cooldown(AlertTier.EMERGENCY)
+        mgr._last_sent["emergency"] = time.time() - (EMERGENCY_REBROADCAST_MINUTES + 1) * 60
         assert not mgr._is_on_cooldown(AlertTier.EMERGENCY)
 
     def test_cooldown_expires(self):
@@ -164,6 +173,96 @@ class TestCooldowns:
             assert "cooldown_minutes" in tier_status
             assert "on_cooldown" in tier_status
             assert "remaining_minutes" in tier_status
+
+
+class TestEmergencyCadence:
+    """A persisting emergency must not re-broadcast every cycle.
+
+    Pins the 2026-10-06 fix for the 2026-10-03..05 storm (~850 identical
+    EMERGENCY broadcasts, one per 5-minute compute cycle, cooldown 0).
+    """
+
+    @pytest.mark.asyncio
+    async def test_persistence_does_not_rebroadcast_immediately(self):
+        # The storm scenario: level stays EMERGENCY cycle after cycle.
+        mgr = AlertManager(telegram_bot_token="test", telegram_chat_id="123")
+        heat = _make_heat(1.0, HeatLevel.EMERGENCY)
+        mgr._previous_heat_level = HeatLevel.EMERGENCY  # no level change
+
+        with patch.object(mgr, "_send_telegram", new_callable=AsyncMock, return_value=True):
+            sent1 = await mgr.check_and_alert(
+                heat_score=heat,
+                previous_heat=None,
+                regime_state=None,
+                throttle_state=None,
+                attribution=None,
+                recommendations=None,
+            )
+            sent2 = await mgr.check_and_alert(
+                heat_score=heat,
+                previous_heat=None,
+                regime_state=None,
+                throttle_state=None,
+                attribution=None,
+                recommendations=None,
+            )
+        assert "emergency" in sent1
+        assert "emergency" not in sent2  # still emergency, still suppressed
+
+    @pytest.mark.asyncio
+    async def test_rebroadcast_after_interval(self):
+        mgr = AlertManager(telegram_bot_token="test", telegram_chat_id="123")
+        heat = _make_heat(1.0, HeatLevel.EMERGENCY)
+        mgr._previous_heat_level = HeatLevel.EMERGENCY
+
+        with patch.object(mgr, "_send_telegram", new_callable=AsyncMock, return_value=True):
+            sent1 = await mgr.check_and_alert(
+                heat_score=heat,
+                previous_heat=None,
+                regime_state=None,
+                throttle_state=None,
+                attribution=None,
+                recommendations=None,
+            )
+            # Last broadcast one interval (+1 min) ago: reminder is due.
+            mgr._last_sent["emergency"] = time.time() - (EMERGENCY_REBROADCAST_MINUTES + 1) * 60
+            sent2 = await mgr.check_and_alert(
+                heat_score=heat,
+                previous_heat=None,
+                regime_state=None,
+                throttle_state=None,
+                attribution=None,
+                recommendations=None,
+            )
+        assert "emergency" in sent1
+        assert "emergency" in sent2
+
+    @pytest.mark.asyncio
+    async def test_reentry_alerts_through_level_change(self):
+        # Emergency -> critical -> emergency must alert on each transition
+        # regardless of the emergency re-broadcast cooldown.
+        mgr = AlertManager(telegram_bot_token="test", telegram_chat_id="123")
+        emerg = _make_heat(1.0, HeatLevel.EMERGENCY)
+        crit = _make_heat(0.90, HeatLevel.CRITICAL)
+
+        with patch.object(mgr, "_send_telegram", new_callable=AsyncMock, return_value=True):
+            await mgr.check_and_alert(
+                heat_score=emerg, previous_heat=None, regime_state=None,
+                throttle_state=None, attribution=None, recommendations=None,
+            )  # emergency broadcast; _previous_heat_level = EMERGENCY
+            down = await mgr.check_and_alert(
+                heat_score=crit, previous_heat=None, regime_state=None,
+                throttle_state=None, attribution=None, recommendations=None,
+            )
+            assert "level_change" in down  # de-escalation alerts
+            # Rapid flapping stays suppressed by the 30-min anti-flap
+            # cooldown (pre-existing behavior); re-entry after it alerts.
+            mgr._last_sent["level_change"] = time.time() - 31 * 60
+            up = await mgr.check_and_alert(
+                heat_score=emerg, previous_heat=None, regime_state=None,
+                throttle_state=None, attribution=None, recommendations=None,
+            )
+            assert "level_change" in up  # re-entry alerts
 
 
 # ── Formatting Tests ──
