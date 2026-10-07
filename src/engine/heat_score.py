@@ -69,6 +69,15 @@ class HeatScoreCalculator:
         self._corr_history: list[float] = []
         self._max_history = 504  # ~2 years of trading days
 
+        # Histories advance only when the underlying data date changes
+        # (one observation per trading day, matching the 252/504 trading-day
+        # design). Appending on every compute cycle re-inserts the same value
+        # ~288x/day at the 5-min cadence; because percentile_rank counts
+        # history <= value, the accumulating duplicates self-inflate the
+        # percentiles toward 1.0 even with markets closed (root cause of the
+        # 2026-10-03..05 phantom EMERGENCY storm). See PROGRESS.md 2026-10-06.
+        self._last_append_key: str | None = None
+
     def compute(
         self,
         returns: pd.DataFrame,
@@ -92,9 +101,16 @@ class HeatScoreCalculator:
         Returns:
             HeatScore with all components and classification.
         """
+        # Append-once-per-data-date: repeated cycles on an unchanged frame
+        # (closed markets, or intraday refreshes of the same daily bar) rank
+        # against the frozen history instead of polluting it with duplicates.
+        append_key = str(returns.index[-1]) if len(returns.index) else ""
+        should_append = append_key != self._last_append_key
+
         # 1. Absorption Ratio
         ar = absorption_ratio(returns)
-        self._ar_history.append(ar)
+        if should_append:
+            self._ar_history.append(ar)
         ar_pct = percentile_rank(ar, self._ar_history[-self._max_history:])
 
         # 2. Turbulence Index
@@ -102,24 +118,33 @@ class HeatScoreCalculator:
             turb = turbulence_index(returns.iloc[-1].values, returns.iloc[:-1])
         else:
             turb = 0.0
-        self._turb_history.append(turb)
+        if should_append:
+            self._turb_history.append(turb)
         turb_pct = percentile_rank(turb, self._turb_history[-self._max_history:])
 
         # 3. Diversification Ratio (inverse — lower DR = more heat)
         dr = diversification_ratio(portfolio_weights, returns)
-        self._dr_history.append(1.0 / max(dr, 0.01))
+        if should_append:
+            self._dr_history.append(1.0 / max(dr, 0.01))
         dr_pct = percentile_rank(
             1.0 / max(dr, 0.01), self._dr_history[-self._max_history:]
         )
 
         # 4. Factor HHI
         hhi = factor_hhi(factor_exposures)
-        self._hhi_history.append(hhi)
+        if should_append:
+            self._hhi_history.append(hhi)
         hhi_pct = percentile_rank(hhi, self._hhi_history[-self._max_history:])
 
         # 5. Average Correlation
-        self._corr_history.append(avg_correlation)
+        if should_append:
+            self._corr_history.append(avg_correlation)
         corr_pct = percentile_rank(avg_correlation, self._corr_history[-self._max_history:])
+
+        # All five histories advanced together; only now lock the date key so
+        # a mid-compute exception retries the append on the next cycle.
+        if should_append:
+            self._last_append_key = append_key
 
         # Composite score
         score = (
