@@ -313,7 +313,10 @@ class AlertManager:
                     f"\n\n<b>Last feedback:</b> {mark} {str(fb.get('vote', '?')).upper()}"
                     f" ({fb.get('et_date', '?')})"
                 )
-        msg += "\n\nWas this useful? Reply <b>YES</b> / <b>NO</b> in this topic."
+        msg += (
+            "\n\nWas this useful? Reply <b>YES</b> / <b>NO</b>"
+            " (or \U0001f44d / \U0001f44e) in this topic."
+        )
 
         # Data quality
         if data_quality:

@@ -95,6 +95,28 @@ class TestFeedbackModule:
         assert "getUpdates(" not in source
 
 
+class TestEmojiVotes:
+    """A bare thumbs up/down is a first-class tap; records stay words."""
+
+    def test_bare_emoji_canonicalized(self):
+        assert normalize_vote("\U0001f44d") == "yes"
+        assert normalize_vote("\U0001f44e") == "no"
+        assert normalize_vote("\U0001f44d\ufe0f") == "yes"  # variation selector
+        assert normalize_vote("\U0001f44e\U0001f3fd") == "no"  # skin tone
+
+    def test_emoji_written_as_canonical_word(self, tmp_path: Path):
+        log = tmp_path / "feedback_log.jsonl"
+        append_feedback(log, vote="\U0001f44d", et_date="2026-10-08")
+        fb = last_feedback(log)
+        assert fb is not None
+        assert fb["vote"] == "yes"  # downstream readers never see the emoji
+
+    def test_emoji_with_junk_rejected(self):
+        for bad in ("\U0001f44d\U0001f44d", "yes \U0001f44d", "\U0001f44d!", "\U0001f444"):
+            with pytest.raises(ValueError):
+                normalize_vote(bad)
+
+
 class TestSummaryRendering:
     async def _send(self, manager: AlertManager) -> str:
         sent: list[str] = []
@@ -121,6 +143,21 @@ class TestSummaryRendering:
         assert "YES" in msg
         assert "2026-09-28" in msg
         assert "Reply <b>YES</b> / <b>NO</b>" in msg
+
+    async def test_summary_ask_mentions_emoji_tap(self):
+        manager = AlertManager()
+        msg = await self._send(manager)
+        assert (
+            "Reply <b>YES</b> / <b>NO</b> (or \U0001f44d / \U0001f44e) in this topic." in msg
+        )
+
+    async def test_summary_renders_emoji_tap_recorded_as_word(self, tmp_path: Path):
+        log = tmp_path / "feedback_log.jsonl"
+        append_feedback(log, vote="\U0001f44d", et_date="2026-10-07")
+        manager = AlertManager(feedback_log_path=str(log))
+        msg = await self._send(manager)
+        assert "<b>Last feedback:</b> \U0001f44d YES" in msg
+        assert "2026-10-07" in msg
 
     async def test_summary_without_feedback_asks_only(self):
         manager = AlertManager()
@@ -164,6 +201,17 @@ class TestFeedbackAPI:
         resp = client.post("/feedback", params={"vote": "maybe"})
         assert resp.status_code == 422
 
+    def test_emoji_vote_accepted_and_canonicalized(self, client_and_log):
+        client, _ = client_and_log
+        resp = client.post("/feedback", params={"vote": "\U0001f44e"})
+        assert resp.status_code == 200
+        assert resp.json()["recorded"]["vote"] == "no"
+
+    def test_doubled_emoji_is_422(self, client_and_log):
+        client, _ = client_and_log
+        resp = client.post("/feedback", params={"vote": "\U0001f44d\U0001f44d"})
+        assert resp.status_code == 422
+
 
 class TestRecordFeedbackCLI:
     def test_api_path(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
@@ -171,6 +219,21 @@ class TestRecordFeedbackCLI:
 
         monkeypatch.setattr(rf, "post_to_service", lambda *a, **k: True)
         assert rf.main(["yes"]) == 0
+
+    def test_api_path_canonicalizes_emoji_before_post(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        import scripts.record_feedback as rf
+
+        seen: list[str] = []
+
+        def fake_post(base_url: str, vote: str, et_date: str | None) -> bool:
+            seen.append(vote)
+            return True
+
+        monkeypatch.setattr(rf, "post_to_service", fake_post)
+        assert rf.main(["\U0001f44d"]) == 0
+        assert seen == ["yes"]  # the wire format stays the word
 
     def test_offline_fallback_appends_directly(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -185,6 +248,20 @@ class TestRecordFeedbackCLI:
         assert fb is not None
         assert fb["vote"] == "no"
         assert fb["et_date"] == "2026-09-29"
+        assert fb["source"] == "cli-offline"
+
+    def test_offline_fallback_emoji_appends_canonical_word(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        import scripts.record_feedback as rf
+
+        monkeypatch.setattr(rf, "post_to_service", lambda *a, **k: False)
+        log = tmp_path / "fb.jsonl"
+        monkeypatch.setenv("RISKRADAR_FEEDBACK_LOG_PATH", str(log))
+        assert rf.main(["\U0001f44d", "--date", "2026-10-08"]) == 0
+        fb = last_feedback(log)
+        assert fb is not None
+        assert fb["vote"] == "yes"
         assert fb["source"] == "cli-offline"
 
     def test_invalid_choice_rejected_by_argparse(

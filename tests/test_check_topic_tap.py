@@ -14,6 +14,7 @@ from datetime import date, datetime, timedelta
 import pytest
 
 from scripts.check_topic_tap import (
+    BARE_EMOJI_RE,
     BARE_VOTE_RE,
     main,
     run_check,
@@ -74,6 +75,29 @@ class TestBareVoteRegex:
     def test_non_bare_rejected(self):
         for text in ("[philip Bankier] yes but add PLTR", "[philip Bankier] nope", "yes", "[philip Bankier]"):
             assert BARE_VOTE_RE.match(text) is None, text
+
+
+class TestBareEmojiRegex:
+    """A bare thumbs up/down is a first-class tap (same strictness as words)."""
+
+    def test_bare_emoji_variants(self):
+        for text in (
+            "[philip Bankier] \U0001f44d",
+            "[philip Bankier] \U0001f44e",
+            "[philip Bankier] \U0001f44d\ufe0f",  # variation selector
+            "[philip Bankier] \U0001f44d\U0001f3fb!",  # skin tone + punct
+            "[philip Bankier]  \U0001f44e.",
+        ):
+            assert BARE_EMOJI_RE.match(text) is not None, text
+
+    def test_non_bare_emoji_rejected(self):
+        for text in (
+            "[philip Bankier] \U0001f44d but too noisy",  # extra words
+            "\U0001f44d",  # no sender bracket
+            "[philip Bankier] \U0001f444",  # wrong emoji
+            "[philip Bankier] \U0001f44d\U0001f44d",  # doubled
+        ):
+            assert BARE_EMOJI_RE.match(text) is None, text
 
 
 class TestScanSessions:
@@ -149,6 +173,29 @@ class TestScanSessions:
         candidates, _ = scan_sessions(tmp_path, since=SINCE, sender=SENDER)
         assert [c["vote"] for c in candidates] == ["no", "yes"]  # oldest -> newest
         assert candidates[-1]["vote"] == "yes"
+
+    def test_bare_emoji_tap_is_candidate_with_canonical_vote(self, tmp_path):
+        write_session(
+            tmp_path,
+            "session_emoji.json",
+            messages=[user("[philip Bankier] \U0001f44d\U0001f3fb")],
+            mtime=datetime(2026, 10, 2, 16, 45),
+        )
+        candidates, near = scan_sessions(tmp_path, since=SINCE, sender=SENDER)
+        assert len(candidates) == 1
+        assert candidates[0]["vote"] == "yes"  # canonical word, not the emoji
+        assert near == []
+
+    def test_wordy_emoji_reply_is_near_miss_not_candidate(self, tmp_path):
+        write_session(
+            tmp_path,
+            "session_emoji_wordy.json",
+            messages=[user("[philip Bankier] \U0001f44d but the alerts are too loud")],
+            mtime=datetime(2026, 10, 2, 16, 45),
+        )
+        candidates, near = scan_sessions(tmp_path, since=SINCE, sender=SENDER)
+        assert candidates == []
+        assert len(near) == 1
 
 
 class TestTopicActiveDates:
@@ -256,6 +303,22 @@ class TestRunCheck:
         lines = fb.read_text().strip().splitlines()
         assert len(lines) == 1
         assert json.loads(lines[0])["vote"] == "yes"
+
+    def test_apply_records_emoji_tap_as_canonical_word(self, tmp_path):
+        sessions = tmp_path / "sessions"
+        sessions.mkdir()
+        write_session(
+            sessions,
+            "session_emoji.json",
+            messages=[user("[philip Bankier] \U0001f44d\ufe0f")],
+            mtime=datetime(2026, 10, 2, 16, 45),
+        )
+        log = tmp_path / "agent.log"
+        write_log(log, [(date(2026, 10, 2), "Flushing ...group:-1003820528092:4799")])
+        fb = tmp_path / "feedback.jsonl"
+        report = run_check(sessions_dir=sessions, gateway_log=log, feedback_log=fb, since=SINCE, apply=True)
+        assert report["recorded"]["vote"] == "yes"
+        assert json.loads(fb.read_text().strip())["vote"] == "yes"
 
     def test_apply_skips_when_feedback_already_newer(self, tmp_path):
         sessions = tmp_path / "sessions"

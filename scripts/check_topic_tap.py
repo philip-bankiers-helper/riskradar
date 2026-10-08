@@ -8,7 +8,8 @@ is lost and W2 stalls on evidence that exists but was never written.
 
 This script is the nightly backstop. It scans the LOCAL Hermes gateway
 transcript store (JSON files under ``~/.hermes/sessions``) for telegram
-sessions carrying a bare ``[philip Bankier] yes|no`` user message, and
+sessions carrying a bare ``[philip Bankier] yes|no`` (or bare thumbs
+up/down) user message, and
 attributes the session to the RiskRadar topic (thread 4799) by joining
 against the gateway log, which records the full session key
 ``agent:main:telegram:group:-1003820528092:4799`` whenever the topic is
@@ -22,8 +23,9 @@ Detection rules (deliberately strict):
 - platform must be "telegram"
 - session_start must be on/after --since (default FIRST_W2_EVIDENCE)
 - the user message must be BARE: ``[philip Bankier] yes`` (case/punct
-  tolerant). Anything with extra words is a near-miss, reported but
-  never recorded.
+  tolerant) or a bare thumbs up/down ``[philip Bankier] 👍`` (variation
+  selector / skin tone / trailing punctuation tolerated). Anything with
+  extra words is a near-miss, reported but never recorded.
 - a candidate is only "topic_verified" when the gateway log shows
   thread-4799 activity within +/- 1 day of the transcript's mtime.
 - with --apply, only the NEWEST topic_verified candidate is recorded,
@@ -44,7 +46,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
 from src.delivery_log import FIRST_W2_EVIDENCE  # noqa: E402
-from src.feedback import append_feedback, read_feedback  # noqa: E402
+from src.feedback import append_feedback, normalize_vote, read_feedback  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +59,16 @@ TOPIC_LOG_KEY = "group:-1003820528092:4799"
 TOPIC_LOG_SLACK = timedelta(days=1)
 
 BARE_VOTE_RE = re.compile(r"^\[(?P<sender>[^\]]+)\]\s*(?P<vote>yes|no)[\s.!]*$", re.IGNORECASE)
-LEADING_VOTE_RE = re.compile(r"^\[[^\]]+\]\s*(yes|no)\b", re.IGNORECASE)
+LEADING_VOTE_RE = re.compile(r"^\[[^]]+\]\s*(yes|no)\b", re.IGNORECASE)
+# Bare thumbs up/down (optional variation selector / skin tone / trailing
+# punct) counts as a first-class tap; wordy emoji replies are near-misses.
+BARE_EMOJI_RE = re.compile(
+    r"^\[(?P<sender>[^\]]+)\]\s*(?P<vote>\U0001f44d|\U0001f44e)"
+    r"[\ufe0f\U0001f3fb-\U0001f3ff\s.!]*$"
+)
+LEADING_EMOJI_RE = re.compile(
+    r"^\[[^\]]+\]\s*(?:\U0001f44d|\U0001f44e)(?:\ufe0f|[\U0001f3fb-\U0001f3ff])?"
+)
 LOG_TS_RE = re.compile(r"^(?P<ts>\d{4}-\d{2}-\d{2}) \d{2}:\d{2}:\d{2}")
 
 
@@ -105,7 +116,7 @@ def scan_sessions(
             if not isinstance(content, str):
                 continue
             text = content.strip()
-            bare = BARE_VOTE_RE.match(text)
+            bare = BARE_VOTE_RE.match(text) or BARE_EMOJI_RE.match(text)
             sender_ok = (
                 bare is not None and bare.group("sender").strip().lower() == sender.lower()
             ) or text.lower().startswith(f"[{sender.lower()}]")
@@ -115,12 +126,12 @@ def scan_sessions(
                         "session_id": str(data.get("session_id", path.stem)),
                         "file": path.name,
                         "mtime": datetime.fromtimestamp(path.stat().st_mtime),
-                        "vote": bare.group("vote").lower(),
+                        "vote": normalize_vote(bare.group("vote")),
                         "message_index": index,
                         "text": text,
                     }
                 )
-            elif sender_ok and LEADING_VOTE_RE.match(text):
+            elif sender_ok and (LEADING_VOTE_RE.match(text) or LEADING_EMOJI_RE.match(text)):
                 near_misses.append(
                     {
                         "session_id": str(data.get("session_id", path.stem)),
