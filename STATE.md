@@ -1,16 +1,16 @@
-FRONTIER: increment=W2 status=not met tests=382/383 holdout=4 push=ok
+FRONTIER: increment=W2 status=not met tests=390/391 holdout=4 push=ok
 
 ## What it is
-RiskRadar is a launchd-served portfolio heat monitor that scores Philip's real 6-symbol book every 5 minutes and posts a 16:30 ET daily summary plus a Monday weekly scorecard into Telegram topic 4799, with W1/W3 flipped and W2 waiting only on Philip's first YES/NO tap. Tonight closed the storm post-mortem for good: the phantom EMERGENCY was caused by the scorer appending unchanged values to its in-memory percentile histories every 5-minute cycle (duplicates self-inflate their own percentile toward 1.0 on closed markets), fixed by advancing the histories once per data date (0fa18ac, replay: old logic 0.218→1.000 crossing EMERGENCY in ~1d 11h, new logic frozen at 0.218 cool), tested with 8 new cases (390 passed total, battle 49/49) and deployed to pid 36926 ahead of today's slot. Next: Philip's YES/NO reply in topic 4799 flips W2 (HQ ask standing, not re-asked); secondary per-cycle histories in the correlation/crowding paths can be deduped later if drift ever shows up there.
+RiskRadar is a launchd-served portfolio heat monitor that scores Philip's real 6-symbol book every 5 minutes and posts a 16:30 ET daily summary plus a Monday weekly scorecard into Telegram topic 4799, with W1/W3 flipped and W2 waiting only on Philip's first YES/NO tap.
 
 ## What is currently happening
-W1, W3 are done; W2 is still open.
+Tonight (7687825) widened the tap surface so a bare thumbs up/down emoji in topic 4799 counts as a yes/no — canonicalized to the word at every entry point (API, CLI, transcript backstop) so the log format never changes — and the ask line in each summary now advertises it; the storm-era score fix (0fa18ac) was re-verified in production with a flat 0.19 heat across a frozen overnight, and the secondary per-cycle histories were measured drift-free and left alone.
 
 ## What you can do next
-(not written yet)
+Next: Philip's one-word or one-emoji reply in topic 4799 flips W2 (HQ ask standing, not re-asked); tonight's 16:30 ET slot is streak day 22 and the first summary carrying the new ask line.
 
 ## Sources and tools
 Mac Studio · /Users/kairox/riskradar · nightly 02:30 Mon–Fri · Telegram Kairox HQ topic 4799 · github.com/philip-bankiers-helper/riskradar · Substack none
 
 ## Document details
-_written nightly by Manager Hermes · 2026-10-07T07:41:45Z_
+_written nightly by Manager Hermes · 2026-10-08T07:45:26Z_
