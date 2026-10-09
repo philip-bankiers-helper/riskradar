@@ -215,3 +215,12 @@ Entries are append-only.
 - Deployed 7687825 to com.kairox.riskradar ahead of today slot: pid 36926→94869, /health 200, scheduler re-armed (46041 s), /positions shows the real 6-symbol book, first cycle 0.19 (cool), top contributor PLTR (25.7% heat share). Backstop re-run on the new code: quiet (0 candidates, 0 near-misses).
 - Gates: 404 passed, 1 deselected (was 390; +14). Holdout 4 passed (fresh tonight). Secrets scan clean. Floor/battle are Friday gates, not run tonight.
 - W2 verdict: payload leg GREEN — all 7 scheduled summaries since FIRST_W2_EVIDENCE carry positions + top-3 attributions + action (5469, 5474, 5658, 5942, 6225, 6330, 6333); book matches repo. w2_met=false, single reason "waiting for Philip's first YES/NO tap" — which a bare 👍/👎 in topic 4799 now also satisfies. Waiting on: Philip's tap, nothing else.
+
+## 2026-10-09 — W2 night 9 (Friday): verification only, all gates green
+
+- Friday directive honored: no features, no code changes, tree clean at 1fe858e throughout.
+- Streak check: 16:30 ET summary for 2026-10-08 delivered (message 6335, server-clock corroborated; checked=28, corroborated=28, mismatched=0). Scheduled streak: 22 consecutive (2026-09-17..2026-10-08); w1_met=true, live. w3_met=true (weekly posts 5458, 6226 standing; next due-week Monday 2026-10-12 — not today). 6335 was also the first summary to carry the new "Reply YES / NO (or 👍 / 👎)" ask line.
+- W2 verdict: payload leg GREEN — all 8 scheduled summaries since FIRST_W2_EVIDENCE carry positions + top-3 attributions + action (5469, 5474, 5658, 5942, 6225, 6330, 6333, 6335); book matches repo. w2_met=false, single reason "waiting for Philip's first YES/NO tap". Tap backstop quiet again tonight (0 candidates, 0 near-misses). HQ ask standing (card 33e08cea, ws-riskradar) — not re-asked.
+- Friday gates, all fresh tonight: blocking suite 404 passed, 1 deselected; holdout 4 passed; battle 49/49; floor baseline=225 actual=410 ok; secrets scan clean.
+- Production health: /health 200; alert-tier delivery-log records unchanged at 2, both single alert_level_change events (10-06, 10-07) — expected post-storm cadence, no storm signature.
+- Done: Friday verification complete. Waiting on: Philip's tap (word or emoji) in topic 4799 — nothing else.
