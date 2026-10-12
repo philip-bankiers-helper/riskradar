@@ -1,3 +1,10 @@
-RiskRadar is a launchd-served portfolio heat monitor that scores Philip's real 6-symbol book every 5 minutes and posts a 16:30 ET daily summary plus a Monday weekly scorecard into Telegram topic 4799, with W1/W3 flipped and W2 waiting only on Philip's first YES/NO tap.
-Friday verification night (2026-10-09): every gate green with zero code changes — 404 offline tests, holdout 4/4, battle 49/49, test floor and secrets scan clean — streak now 22 consecutive 16:30 ET summaries through message 6335, service healthy, and post-storm alert cadence quiet (2 single level-change records all week).
-Next: Philip's one-word or one-emoji reply in topic 4799 flips W2 (HQ ask standing, not re-asked); Monday 2026-10-12 is the next weekly scorecard slot and streak day 23.
+# STATE.answers
+
+## What is it?
+RiskRadar is a portfolio risk monitor for Philip's 6-symbol book (NVDA, TSLA, META, SPCX, GOOG, PLTR) that scores market heat daily and posts a 16:30 ET summary to the RiskRadar Telegram topic, plus a weekly lead-time scorecard on due-week Mondays.
+
+## What is currently happening?
+W1 (delivery, 25-day live streak) and W3 (weekly scorecard) are met and standing; W2 is one leg from done — every summary since 2026-10-01 carries the holdings-driven score, top-3 attributions and one action, and tonight (b32ff04) the tap backstop learned to catch a quoted reply-to-summary YES/NO/👍/👎, which the old regexes would have missed entirely. The only remaining input is Philip's first real tap in topic 4799; the feedback log is still empty and no telegram transcript exists since 2026-09-26, so the wait is genuine.
+
+## What can you do next?
+Philip: reply to any 16:30 ET summary in topic 4799 with YES/NO (or 👍/👎) — that single message flips W2. Agent (next session): verify today's slot delivered summary day 26 AND weekly scorecard #3 (weekly_posts=3), rerun the backstop (it now catches quoted replies), and flip W2 in ROADMAP.json once w2_status reports met with the surfaced-message evidence.
