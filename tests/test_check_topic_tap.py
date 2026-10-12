@@ -198,6 +198,124 @@ class TestScanSessions:
         assert len(near) == 1
 
 
+class TestQuotedReplyTaps:
+    """A reply-to-summary tap renders with a [Replying to: "..."] envelope.
+
+    This is the natural way Philip answers the 16:30 summary; without
+    envelope stripping the tap would be invisible (not even a near-miss).
+    """
+
+    SUMMARY_QUOTE = (
+        '[Replying to: "RiskRadar — daily summary 📉\\n'
+        "Heat 0.19 (cool) in unknown regime.\\n"
+        'Reply YES / NO (or 👍 / 👎) in this topic."]'
+    )
+
+    def test_quoted_word_tap_is_candidate(self, tmp_path):
+        write_session(
+            tmp_path,
+            "session_quote.json",
+            messages=[user(f"[philip Bankier] {self.SUMMARY_QUOTE}\n\nyes")],
+            mtime=datetime(2026, 10, 2, 16, 45),
+        )
+        candidates, near = scan_sessions(tmp_path, since=SINCE, sender=SENDER)
+        assert len(candidates) == 1
+        assert candidates[0]["vote"] == "yes"
+        assert near == []
+
+    def test_quoted_emoji_tap_is_candidate(self, tmp_path):
+        write_session(
+            tmp_path,
+            "session_quote_emoji.json",
+            messages=[user(f"[philip Bankier] {self.SUMMARY_QUOTE}\n\n\U0001f44d\ufe0f")],
+            mtime=datetime(2026, 10, 2, 16, 45),
+        )
+        candidates, near = scan_sessions(tmp_path, since=SINCE, sender=SENDER)
+        assert len(candidates) == 1
+        assert candidates[0]["vote"] == "yes"  # canonical word, not the emoji
+        assert near == []
+
+    def test_quoted_no_tap_is_candidate(self, tmp_path):
+        write_session(
+            tmp_path,
+            "session_quote_no.json",
+            messages=[user(f"[philip Bankier] {self.SUMMARY_QUOTE}\n\nNO.")],
+            mtime=datetime(2026, 10, 2, 16, 45),
+        )
+        candidates, _ = scan_sessions(tmp_path, since=SINCE, sender=SENDER)
+        assert len(candidates) == 1
+        assert candidates[0]["vote"] == "no"
+
+    def test_quoted_wordy_reply_is_near_miss(self, tmp_path):
+        write_session(
+            tmp_path,
+            "session_quote_wordy.json",
+            messages=[
+                user(f"[philip Bankier] {self.SUMMARY_QUOTE}\n\nyes but the heat section is too dense")
+            ],
+            mtime=datetime(2026, 10, 2, 16, 45),
+        )
+        candidates, near = scan_sessions(tmp_path, since=SINCE, sender=SENDER)
+        assert candidates == []
+        assert len(near) == 1
+
+    def test_quoted_tap_from_other_sender_ignored(self, tmp_path):
+        write_session(
+            tmp_path,
+            "session_quote_other.json",
+            messages=[user(f"[Vic] {self.SUMMARY_QUOTE}\n\nyes")],
+            mtime=datetime(2026, 10, 2, 16, 45),
+        )
+        assert scan_sessions(tmp_path, since=SINCE, sender=SENDER) == ([], [])
+
+    def test_quote_with_brackets_and_newlines_does_not_swallow_reply(self, tmp_path):
+        quote = '[Replying to: "Vic said [hello there] and\nalso mentioned [RiskRadar] twice"]'
+        write_session(
+            tmp_path,
+            "session_quote_nested.json",
+            messages=[user(f"[philip Bankier] {quote}\n\nno")],
+            mtime=datetime(2026, 10, 2, 16, 45),
+        )
+        candidates, near = scan_sessions(tmp_path, since=SINCE, sender=SENDER)
+        assert len(candidates) == 1
+        assert candidates[0]["vote"] == "no"
+        assert near == []
+
+    def test_envelope_with_no_reply_text_is_not_a_tap(self, tmp_path):
+        write_session(
+            tmp_path,
+            "session_quote_bare.json",
+            messages=[user(f"[philip Bankier] {self.SUMMARY_QUOTE}")],
+            mtime=datetime(2026, 10, 2, 16, 45),
+        )
+        assert scan_sessions(tmp_path, since=SINCE, sender=SENDER) == ([], [])
+
+    def test_quoted_tap_full_check_dry_run_reports_would_record(self, tmp_path):
+        sessions = tmp_path / "sessions"
+        sessions.mkdir()
+        write_session(
+            sessions,
+            "session_quote.json",
+            messages=[user(f"[philip Bankier] {self.SUMMARY_QUOTE}\n\nyes")],
+            mtime=datetime(2026, 10, 2, 16, 45),
+        )
+        log = tmp_path / "agent.log"
+        write_log(
+            log,
+            [(date(2026, 10, 2), "Flushing text batch agent:main:telegram:group:-1003820528092:4799 (1 chars)")],
+        )
+        report = run_check(
+            sessions_dir=sessions,
+            gateway_log=log,
+            feedback_log=tmp_path / "feedback.jsonl",
+            since=SINCE,
+        )
+        assert report["topic_verified"] == 1
+        assert report["recorded"] is None
+        assert "would record vote=yes" in report["reason"]
+        assert not (tmp_path / "feedback.jsonl").exists()
+
+
 class TestTopicActiveDates:
     def test_extracts_4799_dates_only(self, tmp_path):
         log = tmp_path / "agent.log"

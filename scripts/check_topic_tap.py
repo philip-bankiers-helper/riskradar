@@ -26,6 +26,10 @@ Detection rules (deliberately strict):
   tolerant) or a bare thumbs up/down ``[philip Bankier] 👍`` (variation
   selector / skin tone / trailing punctuation tolerated). Anything with
   extra words is a near-miss, reported but never recorded.
+- a Telegram QUOTED REPLY (the natural way to answer the summary) renders
+  as ``[philip Bankier] [Replying to: "..."]\\n\\n<actual reply>`` — the
+  quote envelope is stripped before matching, so a reply-to-summary tap
+  is matched on the reply text alone with the same bare strictness.
 - a candidate is only "topic_verified" when the gateway log shows
   thread-4799 activity within +/- 1 day of the transcript's mtime.
 - with --apply, only the NEWEST topic_verified candidate is recorded,
@@ -67,7 +71,25 @@ BARE_EMOJI_RE = re.compile(
     r"[\ufe0f\U0001f3fb-\U0001f3ff\s.!]*$"
 )
 LEADING_EMOJI_RE = re.compile(
-    r"^\[[^\]]+\]\s*(?:\U0001f44d|\U0001f44e)(?:\ufe0f|[\U0001f3fb-\U0001f3ff])?"
+    r"^\[[^]]+\]\s*(?:\U0001f44d|\U0001f44e)(?:\ufe0f|[\U0001f3fb-\U0001f3ff])?"
+)
+# Telegram quoted replies render as:
+#   [philip Bankier] [Replying to: "...quoted message..."]\n\n<actual reply>
+# Without stripping the envelope, a bare reply-to-summary tap would not
+# even register as a near-miss. Greedy quote match binds the envelope's
+# closing ']' to the LAST ']' that still leaves reply text, so quotes
+# containing ']' or newlines cannot swallow the reply.
+QUOTE_ENVELOPE_RE = re.compile(
+    r"^\[(?P<sender>[^\]]+)\]\s*\[Replying to:(?P<quote>.*)\](?P<rest>.+)$",
+    re.DOTALL,
+)
+BARE_BODY_VOTE_RE = re.compile(r"^(?P<vote>yes|no)[\s.!]*$", re.IGNORECASE)
+BARE_BODY_EMOJI_RE = re.compile(
+    r"^(?P<vote>\U0001f44d|\U0001f44e)[\ufe0f\U0001f3fb-\U0001f3ff\s.!]*$"
+)
+LEADING_BODY_VOTE_RE = re.compile(r"^(yes|no)\b", re.IGNORECASE)
+LEADING_BODY_EMOJI_RE = re.compile(
+    r"^(?:\U0001f44d|\U0001f44e)(?:\ufe0f|[\U0001f3fb-\U0001f3ff])?"
 )
 LOG_TS_RE = re.compile(r"^(?P<ts>\d{4}-\d{2}-\d{2}) \d{2}:\d{2}:\d{2}")
 
@@ -116,22 +138,37 @@ def scan_sessions(
             if not isinstance(content, str):
                 continue
             text = content.strip()
-            bare = BARE_VOTE_RE.match(text) or BARE_EMOJI_RE.match(text)
-            sender_ok = (
-                bare is not None and bare.group("sender").strip().lower() == sender.lower()
-            ) or text.lower().startswith(f"[{sender.lower()}]")
+            envelope = QUOTE_ENVELOPE_RE.match(text)
+            if envelope is not None:
+                # Quoted reply: match on the reply text alone.
+                sender_ok = (
+                    envelope.group("sender").strip().lower() == sender.lower()
+                )
+                body = envelope.group("rest").strip()
+                bare = BARE_BODY_VOTE_RE.match(body) or BARE_BODY_EMOJI_RE.match(body)
+                vote = bare.group("vote") if bare is not None else None
+                leading = bool(
+                    LEADING_BODY_VOTE_RE.match(body) or LEADING_BODY_EMOJI_RE.match(body)
+                )
+            else:
+                bare = BARE_VOTE_RE.match(text) or BARE_EMOJI_RE.match(text)
+                sender_ok = (
+                    bare is not None and bare.group("sender").strip().lower() == sender.lower()
+                ) or text.lower().startswith(f"[{sender.lower()}]")
+                vote = bare.group("vote") if bare is not None else None
+                leading = bool(LEADING_VOTE_RE.match(text) or LEADING_EMOJI_RE.match(text))
             if bare is not None and sender_ok:
                 candidates.append(
                     {
                         "session_id": str(data.get("session_id", path.stem)),
                         "file": path.name,
                         "mtime": datetime.fromtimestamp(path.stat().st_mtime),
-                        "vote": normalize_vote(bare.group("vote")),
+                        "vote": normalize_vote(vote),
                         "message_index": index,
                         "text": text,
                     }
                 )
-            elif sender_ok and (LEADING_VOTE_RE.match(text) or LEADING_EMOJI_RE.match(text)):
+            elif sender_ok and leading:
                 near_misses.append(
                     {
                         "session_id": str(data.get("session_id", path.stem)),
