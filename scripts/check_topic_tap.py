@@ -32,6 +32,9 @@ Detection rules (deliberately strict):
   is matched on the reply text alone with the same bare strictness.
 - a candidate is only "topic_verified" when the gateway log shows
   thread-4799 activity within +/- 1 day of the transcript's mtime.
+- a bare yes/no from any OTHER sender is a "sender_mismatch": reported
+  (never recorded, never a candidate) so a Telegram display-name change
+  cannot make a real tap silently invisible — rerun with --sender.
 - with --apply, only the NEWEST topic_verified candidate is recorded,
   and only if the feedback log has no record on/after its date.
 """
@@ -108,17 +111,21 @@ def scan_sessions(
     *,
     since: date,
     sender: str = DEFAULT_SENDER,
-) -> tuple[list[dict], list[dict]]:
-    """Return (candidates, near_misses) from telegram transcripts.
+) -> tuple[list[dict], list[dict], list[dict]]:
+    """Return (candidates, near_misses, sender_mismatches).
 
     A candidate is a bare yes/no from ``sender``; a near-miss is any
-    user message that starts with yes/no but carries extra words.
+    user message from ``sender`` that starts with yes/no but carries
+    extra words; a sender-mismatch is a bare yes/no from ANY other
+    sender — report-only, so a display-name change can never make a
+    real tap silently invisible.
     """
     sessions_dir = Path(sessions_dir)
     candidates: list[dict] = []
     near_misses: list[dict] = []
+    sender_mismatches: list[dict] = []
     if not sessions_dir.is_dir():
-        return candidates, near_misses
+        return candidates, near_misses, sender_mismatches
 
     for path in sorted(sessions_dir.glob("session_*.json")):
         try:
@@ -157,6 +164,10 @@ def scan_sessions(
                 ) or text.lower().startswith(f"[{sender.lower()}]")
                 vote = bare.group("vote") if bare is not None else None
                 leading = bool(LEADING_VOTE_RE.match(text) or LEADING_EMOJI_RE.match(text))
+            observed_sender = (
+                envelope.group("sender").strip() if envelope is not None
+                else (bare.group("sender").strip() if bare is not None else "")
+            )
             if bare is not None and sender_ok:
                 candidates.append(
                     {
@@ -168,6 +179,19 @@ def scan_sessions(
                         "text": text,
                     }
                 )
+            elif bare is not None and not sender_ok:
+                # Bare tap shape from a different sender: never recorded,
+                # but reported so a display-name change cannot hide it.
+                sender_mismatches.append(
+                    {
+                        "session_id": str(data.get("session_id", path.stem)),
+                        "file": path.name,
+                        "sender": observed_sender,
+                        "vote": normalize_vote(vote),
+                        "message_index": index,
+                        "text": text[:120],
+                    }
+                )
             elif sender_ok and leading:
                 near_misses.append(
                     {
@@ -177,7 +201,7 @@ def scan_sessions(
                     }
                 )
     candidates.sort(key=lambda c: (c["mtime"], c["session_id"], c["message_index"]))
-    return candidates, near_misses
+    return candidates, near_misses, sender_mismatches
 
 
 def topic_active_dates(gateway_log: str | Path) -> set[date]:
@@ -223,7 +247,9 @@ def run_check(
 ) -> dict:
     """Full check; returns the report dict (and records when apply=True)."""
     since = since or FIRST_W2_EVIDENCE
-    candidates, near_misses = scan_sessions(sessions_dir, since=since, sender=sender)
+    candidates, near_misses, sender_mismatches = scan_sessions(
+        sessions_dir, since=since, sender=sender
+    )
     active_dates = topic_active_dates(gateway_log)
     verified = [dict(c, topic_verified=True) for c in candidates if _topic_verified(c, active_dates)]
     feedback = read_feedback(feedback_log)
@@ -236,6 +262,7 @@ def run_check(
             {**c, "mtime": c["mtime"].isoformat()} for c in candidates
         ],
         "near_misses": near_misses,
+        "sender_mismatches": sender_mismatches,
         "topic_verified": len(verified),
         "feedback_last": last,
         "recorded": None,
@@ -244,6 +271,13 @@ def run_check(
 
     if not candidates:
         report["reason"] = "no bare yes/no from sender in telegram transcripts since " + since.isoformat()
+        if sender_mismatches:
+            others = sorted({m["sender"] for m in sender_mismatches if m["sender"]})
+            report["reason"] += (
+                f"; but {len(sender_mismatches)} bare yes/no from other sender(s) "
+                f"{others} — display-name change? inspect sender_mismatches, "
+                "rerun with --sender if Philip renamed"
+            )
         return report
     if not verified:
         report["reason"] = (

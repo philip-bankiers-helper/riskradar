@@ -108,7 +108,7 @@ class TestScanSessions:
             messages=[user("[philip Bankier] YES")],
             mtime=datetime(2026, 10, 2, 16, 45),
         )
-        candidates, near = scan_sessions(tmp_path, since=SINCE, sender=SENDER)
+        candidates, near, mismatches = scan_sessions(tmp_path, since=SINCE, sender=SENDER)
         assert len(candidates) == 1
         assert candidates[0]["vote"] == "yes"
         assert near == []
@@ -120,7 +120,7 @@ class TestScanSessions:
             messages=[user("[philip Bankier] yes but the heat number is confusing")],
             mtime=datetime(2026, 10, 2, 16, 45),
         )
-        candidates, near = scan_sessions(tmp_path, since=SINCE, sender=SENDER)
+        candidates, near, mismatches = scan_sessions(tmp_path, since=SINCE, sender=SENDER)
         assert candidates == []
         assert len(near) == 1
 
@@ -131,7 +131,7 @@ class TestScanSessions:
             messages=[user("[someone else] yes")],
             mtime=datetime(2026, 10, 2, 16, 45),
         )
-        candidates, near = scan_sessions(tmp_path, since=SINCE, sender=SENDER)
+        candidates, near, mismatches = scan_sessions(tmp_path, since=SINCE, sender=SENDER)
         assert candidates == []
         assert near == []
 
@@ -143,7 +143,7 @@ class TestScanSessions:
             messages=[user("[philip Bankier] yes")],
             mtime=datetime(2026, 10, 2, 16, 45),
         )
-        assert scan_sessions(tmp_path, since=SINCE, sender=SENDER) == ([], [])
+        assert scan_sessions(tmp_path, since=SINCE, sender=SENDER) == ([], [], [])
 
     def test_session_before_since_ignored(self, tmp_path):
         write_session(
@@ -153,7 +153,7 @@ class TestScanSessions:
             messages=[user("[philip Bankier] yes")],
             mtime=datetime(2026, 9, 20, 16, 45),
         )
-        assert scan_sessions(tmp_path, since=SINCE, sender=SENDER) == ([], [])
+        assert scan_sessions(tmp_path, since=SINCE, sender=SENDER) == ([], [], [])
 
     def test_multiple_taps_latest_wins_ordering(self, tmp_path):
         write_session(
@@ -170,7 +170,7 @@ class TestScanSessions:
             messages=[user("[philip Bankier] yes")],
             mtime=datetime(2026, 10, 3, 16, 45),
         )
-        candidates, _ = scan_sessions(tmp_path, since=SINCE, sender=SENDER)
+        candidates, _, _ = scan_sessions(tmp_path, since=SINCE, sender=SENDER)
         assert [c["vote"] for c in candidates] == ["no", "yes"]  # oldest -> newest
         assert candidates[-1]["vote"] == "yes"
 
@@ -181,7 +181,7 @@ class TestScanSessions:
             messages=[user("[philip Bankier] \U0001f44d\U0001f3fb")],
             mtime=datetime(2026, 10, 2, 16, 45),
         )
-        candidates, near = scan_sessions(tmp_path, since=SINCE, sender=SENDER)
+        candidates, near, mismatches = scan_sessions(tmp_path, since=SINCE, sender=SENDER)
         assert len(candidates) == 1
         assert candidates[0]["vote"] == "yes"  # canonical word, not the emoji
         assert near == []
@@ -193,7 +193,7 @@ class TestScanSessions:
             messages=[user("[philip Bankier] \U0001f44d but the alerts are too loud")],
             mtime=datetime(2026, 10, 2, 16, 45),
         )
-        candidates, near = scan_sessions(tmp_path, since=SINCE, sender=SENDER)
+        candidates, near, mismatches = scan_sessions(tmp_path, since=SINCE, sender=SENDER)
         assert candidates == []
         assert len(near) == 1
 
@@ -218,7 +218,7 @@ class TestQuotedReplyTaps:
             messages=[user(f"[philip Bankier] {self.SUMMARY_QUOTE}\n\nyes")],
             mtime=datetime(2026, 10, 2, 16, 45),
         )
-        candidates, near = scan_sessions(tmp_path, since=SINCE, sender=SENDER)
+        candidates, near, mismatches = scan_sessions(tmp_path, since=SINCE, sender=SENDER)
         assert len(candidates) == 1
         assert candidates[0]["vote"] == "yes"
         assert near == []
@@ -230,7 +230,7 @@ class TestQuotedReplyTaps:
             messages=[user(f"[philip Bankier] {self.SUMMARY_QUOTE}\n\n\U0001f44d\ufe0f")],
             mtime=datetime(2026, 10, 2, 16, 45),
         )
-        candidates, near = scan_sessions(tmp_path, since=SINCE, sender=SENDER)
+        candidates, near, mismatches = scan_sessions(tmp_path, since=SINCE, sender=SENDER)
         assert len(candidates) == 1
         assert candidates[0]["vote"] == "yes"  # canonical word, not the emoji
         assert near == []
@@ -242,7 +242,7 @@ class TestQuotedReplyTaps:
             messages=[user(f"[philip Bankier] {self.SUMMARY_QUOTE}\n\nNO.")],
             mtime=datetime(2026, 10, 2, 16, 45),
         )
-        candidates, _ = scan_sessions(tmp_path, since=SINCE, sender=SENDER)
+        candidates, _, _ = scan_sessions(tmp_path, since=SINCE, sender=SENDER)
         assert len(candidates) == 1
         assert candidates[0]["vote"] == "no"
 
@@ -255,18 +255,23 @@ class TestQuotedReplyTaps:
             ],
             mtime=datetime(2026, 10, 2, 16, 45),
         )
-        candidates, near = scan_sessions(tmp_path, since=SINCE, sender=SENDER)
+        candidates, near, mismatches = scan_sessions(tmp_path, since=SINCE, sender=SENDER)
         assert candidates == []
         assert len(near) == 1
 
-    def test_quoted_tap_from_other_sender_ignored(self, tmp_path):
+    def test_quoted_tap_from_other_sender_is_reported_mismatch(self, tmp_path):
         write_session(
             tmp_path,
             "session_quote_other.json",
             messages=[user(f"[Vic] {self.SUMMARY_QUOTE}\n\nyes")],
             mtime=datetime(2026, 10, 2, 16, 45),
         )
-        assert scan_sessions(tmp_path, since=SINCE, sender=SENDER) == ([], [])
+        candidates, near, mismatches = scan_sessions(tmp_path, since=SINCE, sender=SENDER)
+        assert candidates == []
+        assert near == []
+        assert len(mismatches) == 1
+        assert mismatches[0]["sender"] == "Vic"
+        assert mismatches[0]["vote"] == "yes"
 
     def test_quote_with_brackets_and_newlines_does_not_swallow_reply(self, tmp_path):
         quote = '[Replying to: "Vic said [hello there] and\nalso mentioned [RiskRadar] twice"]'
@@ -276,7 +281,7 @@ class TestQuotedReplyTaps:
             messages=[user(f"[philip Bankier] {quote}\n\nno")],
             mtime=datetime(2026, 10, 2, 16, 45),
         )
-        candidates, near = scan_sessions(tmp_path, since=SINCE, sender=SENDER)
+        candidates, near, mismatches = scan_sessions(tmp_path, since=SINCE, sender=SENDER)
         assert len(candidates) == 1
         assert candidates[0]["vote"] == "no"
         assert near == []
@@ -288,7 +293,7 @@ class TestQuotedReplyTaps:
             messages=[user(f"[philip Bankier] {self.SUMMARY_QUOTE}")],
             mtime=datetime(2026, 10, 2, 16, 45),
         )
-        assert scan_sessions(tmp_path, since=SINCE, sender=SENDER) == ([], [])
+        assert scan_sessions(tmp_path, since=SINCE, sender=SENDER) == ([], [], [])
 
     def test_quoted_tap_full_check_dry_run_reports_would_record(self, tmp_path):
         sessions = tmp_path / "sessions"
@@ -490,6 +495,119 @@ class TestCli:
         assert code == 0
         report = json.loads(capsys.readouterr().out)
         assert report["recorded"] is None
+
+
+class TestSenderMismatches:
+    """A bare tap from any other sender is reported, never recorded.
+
+    If Philip renames his Telegram display name, every real tap would
+    otherwise be silently dropped — not even a near-miss — and W2 would
+    stall on "0 candidates, 0 near-misses" with nothing to distinguish
+    silence from a sender mismatch.
+    """
+
+    def test_bare_word_from_renamed_sender_is_mismatch(self, tmp_path):
+        write_session(
+            tmp_path,
+            "session_renamed.json",
+            messages=[user("[Philip B.] yes")],
+            mtime=datetime(2026, 10, 2, 16, 45),
+        )
+        candidates, near, mismatches = scan_sessions(tmp_path, since=SINCE, sender=SENDER)
+        assert candidates == []
+        assert near == []
+        assert len(mismatches) == 1
+        assert mismatches[0]["sender"] == "Philip B."
+        assert mismatches[0]["vote"] == "yes"
+
+    def test_bare_emoji_from_other_sender_is_mismatch(self, tmp_path):
+        write_session(
+            tmp_path,
+            "session_emoji_other.json",
+            messages=[user("[philip bankier-backup] \U0001f44e")],
+            mtime=datetime(2026, 10, 2, 16, 45),
+        )
+        candidates, near, mismatches = scan_sessions(tmp_path, since=SINCE, sender=SENDER)
+        assert candidates == []
+        assert len(mismatches) == 1
+        assert mismatches[0]["vote"] == "no"  # emoji canonicalized
+
+    def test_right_sender_tap_is_not_a_mismatch(self, tmp_path):
+        write_session(
+            tmp_path,
+            "session_right.json",
+            messages=[user("[philip Bankier] yes")],
+            mtime=datetime(2026, 10, 2, 16, 45),
+        )
+        candidates, near, mismatches = scan_sessions(tmp_path, since=SINCE, sender=SENDER)
+        assert len(candidates) == 1
+        assert mismatches == []
+
+    def test_wordy_reply_from_other_sender_stays_invisible(self, tmp_path):
+        # Wordy messages from other senders are not mismatches: without a
+        # sender anchor, "yes ..." from anyone would drown the report.
+        write_session(
+            tmp_path,
+            "session_wordy_other.json",
+            messages=[user("[Vic] yes the summary was great")],
+            mtime=datetime(2026, 10, 2, 16, 45),
+        )
+        candidates, near, mismatches = scan_sessions(tmp_path, since=SINCE, sender=SENDER)
+        assert candidates == []
+        assert near == []
+        assert mismatches == []
+
+    def test_report_carries_mismatches_and_reason(self, tmp_path):
+        sessions = tmp_path / "sessions"
+        sessions.mkdir()
+        write_session(
+            sessions,
+            "session_renamed.json",
+            messages=[user("[Philip B.] yes")],
+            mtime=datetime(2026, 10, 2, 16, 45),
+        )
+        log = tmp_path / "agent.log"
+        write_log(log, [])
+        fb = tmp_path / "fb.jsonl"
+        report = run_check(sessions_dir=sessions, gateway_log=log, feedback_log=fb, since=SINCE)
+        assert report["candidates"] == []
+        assert len(report["sender_mismatches"]) == 1
+        assert report["recorded"] is None
+        assert "no bare yes/no" in report["reason"]
+        assert "sender_mismatches" in report["reason"] or "display-name" in report["reason"]
+
+    def test_mismatch_never_recorded_even_with_apply(self, tmp_path):
+        sessions = tmp_path / "sessions"
+        sessions.mkdir()
+        write_session(
+            sessions,
+            "session_renamed.json",
+            messages=[user("[Philip B.] yes")],
+            mtime=datetime(2026, 10, 2, 16, 45),
+        )
+        log = tmp_path / "agent.log"
+        write_log(log, [(date(2026, 10, 2), "telegram group -1003820528092 thread 4799 active")])
+        fb = tmp_path / "fb.jsonl"
+        report = run_check(
+            sessions_dir=sessions, gateway_log=log, feedback_log=fb, since=SINCE, apply=True
+        )
+        assert report["recorded"] is None
+        assert not fb.exists()  # nothing written, even topic-adjacent
+
+    def test_sender_override_matches_renamed_sender(self, tmp_path):
+        # The self-heal path: rerun with --sender once the rename is known.
+        write_session(
+            tmp_path,
+            "session_renamed.json",
+            messages=[user("[Philip B.] yes")],
+            mtime=datetime(2026, 10, 2, 16, 45),
+        )
+        candidates, near, mismatches = scan_sessions(
+            tmp_path, since=SINCE, sender="Philip B."
+        )
+        assert len(candidates) == 1
+        assert candidates[0]["vote"] == "yes"
+        assert mismatches == []
 
 
 class TestSourceGuards:
