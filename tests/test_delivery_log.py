@@ -13,6 +13,7 @@ from src.delivery_log import (
     WEEKLY_SCORECARD,
     append_delivery,
     daily_streak,
+    has_scheduled_summary,
     read_deliveries,
     verify_corroboration,
     w1_status,
@@ -38,6 +39,49 @@ def _append_scheduled(path, day: date, message_id: int, heat: float = 0.5):
 
 
 # ── append / read round-trip ──
+
+
+class TestHasScheduledSummary:
+    """Same-slot idempotency for the 16:30 scheduler (2026-10-24
+    double-fire regression: messages 6411/6412, two identical scheduled
+    summaries 2 s apart)."""
+
+    def test_true_for_day_with_scheduled_summary(self, tmp_path):
+        log = tmp_path / "delivery_log.jsonl"
+        _append_scheduled(log, TODAY, 6411)
+        assert has_scheduled_summary(log, TODAY) is True
+
+    def test_false_for_day_without_delivery(self, tmp_path):
+        log = tmp_path / "delivery_log.jsonl"
+        _append_scheduled(log, TODAY, 6411)
+        assert has_scheduled_summary(log, TODAY + timedelta(days=1)) is False
+
+    def test_manual_send_never_blocks_the_real_slot(self, tmp_path):
+        log = tmp_path / "delivery_log.jsonl"
+        ok = append_delivery(
+            log,
+            tier="daily_summary",
+            message_id=1,
+            scheduled=False,
+            now=ET_1630(TODAY),
+        )
+        assert ok is True
+        assert has_scheduled_summary(log, TODAY) is False
+
+    def test_alert_tiers_never_block_the_real_slot(self, tmp_path):
+        log = tmp_path / "delivery_log.jsonl"
+        ok = append_delivery(
+            log,
+            tier="alert_emergency",
+            message_id=2,
+            scheduled=True,
+            now=ET_1630(TODAY),
+        )
+        assert ok is True
+        assert has_scheduled_summary(log, TODAY) is False
+
+    def test_missing_log_is_false(self, tmp_path):
+        assert has_scheduled_summary(tmp_path / "never-created.jsonl", TODAY) is False
 
 
 class TestAppendRead:

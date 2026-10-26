@@ -119,6 +119,29 @@ def read_deliveries(path: str | Path) -> list[dict]:
     return records
 
 
+def has_scheduled_summary(path: str | Path, day: date) -> bool:
+    """True if a scheduled daily summary already exists for ET ``day``.
+
+    Same-slot idempotency for the 16:30 ET scheduler. Observed once in
+    the wild (2026-10-24: messages 6411 at 16:29:58 and 6412 at
+    16:30:00 — a wall-clock-skew early wake made the loop send, then
+    re-arm the SAME-day slot two seconds later): one slot must produce
+    at most one scheduled summary. Manual sends (``scheduled=False``)
+    never count — a stray test send must not suppress the real
+    delivery, matching the cooldown semantics in
+    ``AlertManager.send_daily_summary``.
+    """
+    key = day.isoformat()
+    for rec in read_deliveries(path):
+        if (
+            rec.get("tier") == DAILY_SUMMARY
+            and rec.get("scheduled", False)
+            and rec.get("et_date") == key
+        ):
+            return True
+    return False
+
+
 def daily_streak(
     path: str | Path,
     *,

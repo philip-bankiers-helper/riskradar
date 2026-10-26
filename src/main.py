@@ -577,6 +577,22 @@ def _next_daily_summary_target(now: datetime) -> datetime:
     return target
 
 
+async def _wait_for_slot(target: datetime, tz, *, sleep=asyncio.sleep, now=datetime.now) -> None:
+    """Block until wall-clock ``now`` reaches ``target``.
+
+    ``asyncio.sleep`` waits on the monotonic clock, so NTP adjustments
+    or post-reboot skew can leave the wall clock marginally behind when
+    the sleep resolves — observed 2026-10-24: the scheduler woke at
+    16:29:58 for a 16:30:00 target, sent (message 6411), then the loop
+    re-armed the SAME-day slot and sent again at 16:30:00 (6412).
+    Re-sleeping the remainder here guarantees the send — and the weekly
+    scorecard riding the Monday slot — fires at or after the target,
+    exactly once per slot. ``sleep``/``now`` injection exists for tests.
+    """
+    while (remaining := (target - now(tz)).total_seconds()) > 0:
+        await sleep(remaining)
+
+
 async def _daily_summary_scheduler(app_state: dict) -> None:
     """Schedule daily summary at 16:30 ET (after market close)."""
     from zoneinfo import ZoneInfo
@@ -591,10 +607,28 @@ async def _daily_summary_scheduler(app_state: dict) -> None:
             logger.info("Daily summary scheduled in %.0f seconds (at %s ET)", wait_seconds, target.strftime("%H:%M"))
             await asyncio.sleep(wait_seconds)
 
+            # Wall-clock skew guard: an early wake must re-sleep the
+            # remainder, never send early and re-arm the same-day slot
+            # (2026-10-24 double-fire, messages 6411/6412).
+            await _wait_for_slot(target, et)
+
             # Send daily summary
             alert_manager = app_state.get("alert_manager")
             heat = app_state.get("last_heat_score")
             if alert_manager and heat:
+                from src.delivery_log import has_scheduled_summary
+
+                delivery_path = getattr(alert_manager, "delivery_log_path", "")
+                if delivery_path and has_scheduled_summary(delivery_path, target.date()):
+                    # Same-slot idempotency: a slot that already fired
+                    # (duplicate task, restart race) must not re-post the
+                    # summary or the weekly scorecard riding it.
+                    logger.warning(
+                        "Daily summary for %s already delivered — duplicate slot fire suppressed",
+                        target.date().isoformat(),
+                    )
+                    continue
+
                 sent = await alert_manager.send_daily_summary(
                     heat_score=heat,
                     regime_state=app_state.get("regime_state"),
