@@ -577,6 +577,39 @@ def _next_daily_summary_target(now: datetime) -> datetime:
     return target
 
 
+# A boot within this window after a missed 16:30 ET slot catches the
+# slot up once through the same idempotent send path. 2026-11-13
+# postmortem: the host rebooted and the service booted 33 min after
+# the slot — day 58 was lost because nothing reconsiders a same-day
+# slot after startup. Two hours covers reboots/updates without
+# turning a missed evening send into a midnight one.
+BOOT_CATCHUP_GRACE_SECONDS = 7200
+
+# compute_heat_loop's first cycle (market-data pull) may not have
+# produced a heat score yet at boot; the catch-up waits at most this
+# long for one before firing anyway (a slot without heat logs the
+# same skip the live loop would).
+BOOT_CATCHUP_HEAT_WAIT_SECONDS = 300
+
+
+def _missed_boot_catchup_target(
+    now: datetime,
+    *,
+    grace_seconds: int = BOOT_CATCHUP_GRACE_SECONDS,
+) -> datetime | None:
+    """Return today's 16:30 slot if ``now`` sits inside the boot catch-up window.
+
+    Fires only when ``slot <= now <= slot + grace_seconds``, in the
+    timezone carried by ``now`` (same convention as
+    ``_next_daily_summary_target``). Before the slot the live loop
+    owns the fire; long after it, a stale send is worse than a miss.
+    """
+    slot = now.replace(hour=16, minute=30, second=0, microsecond=0)
+    if slot <= now <= slot + timedelta(seconds=grace_seconds):
+        return slot
+    return None
+
+
 async def _wait_for_slot(target: datetime, tz, *, sleep=asyncio.sleep, now=datetime.now) -> None:
     """Block until wall-clock ``now`` reaches ``target``.
 
@@ -593,10 +626,120 @@ async def _wait_for_slot(target: datetime, tz, *, sleep=asyncio.sleep, now=datet
         await sleep(remaining)
 
 
+async def _fire_daily_summary_slot(app_state: dict, target: datetime) -> None:
+    """Deliver the 16:30 ET slot for ``target.date()``: summary + Monday scorecard.
+
+    Single send path shared by the live loop and the boot catch-up.
+    Same-slot idempotency via the delivery log (a799d1f invariant):
+    a slot that already fired — duplicate task, restart race, or a
+    catch-up after a delivered slot — must not re-post the summary
+    or the weekly scorecard riding it.
+    """
+    alert_manager = app_state.get("alert_manager")
+    heat = app_state.get("last_heat_score")
+    if alert_manager and heat:
+        from src.delivery_log import has_scheduled_summary
+
+        delivery_path = getattr(alert_manager, "delivery_log_path", "")
+        if delivery_path and has_scheduled_summary(delivery_path, target.date()):
+            # Same-slot idempotency: a slot that already fired
+            # (duplicate task, restart race) must not re-post the
+            # summary or the weekly scorecard riding it.
+            logger.warning(
+                "Daily summary for %s already delivered — duplicate slot fire suppressed",
+                target.date().isoformat(),
+            )
+            return
+
+        sent = await alert_manager.send_daily_summary(
+            heat_score=heat,
+            regime_state=app_state.get("regime_state"),
+            attribution=app_state.get("attribution"),
+            recommendations=app_state.get("recommendations"),
+            data_quality=app_state.get("data_quality"),
+            scheduled=True,
+        )
+        if sent:
+            logger.info(
+                "Daily summary sent (message_id=%s)",
+                getattr(alert_manager, "last_message_id", None),
+            )
+        else:
+            logger.error("Daily summary FAILED to send at scheduled time")
+
+        # Weekly scorecard rides the Monday slot, strictly AFTER
+        # the daily summary: a scorecard failure must never delay
+        # or suppress the daily delivery.
+        if is_weekly_scorecard_slot(target):
+            try:
+                text = await produce_weekly_scorecard_text()
+                if text and await alert_manager.send_weekly_scorecard(
+                    text, scheduled=True
+                ):
+                    logger.info(
+                        "Weekly scorecard sent (message_id=%s)",
+                        alert_manager.last_message_id,
+                    )
+                else:
+                    logger.error("Weekly scorecard skipped or FAILED to send")
+            except Exception as exc:  # noqa: BLE001 - never break the loop
+                logger.error("Weekly scorecard error: %s", exc)
+
+    else:
+        logger.error(
+            "Daily summary skipped: alert_manager=%s heat=%s",
+            alert_manager is not None,
+            heat is not None,
+        )
+
+
+async def _boot_catchup(
+    app_state: dict,
+    *,
+    sleep=asyncio.sleep,
+    now=datetime.now,
+) -> None:
+    """One-shot startup pass: fire today's slot if the service booted inside the grace window.
+
+    Day-58 postmortem (2026-11-13): the host rebooted and launchd
+    brought the service back 33 min AFTER the 16:30 ET slot;
+    ``_next_daily_summary_target`` arms tomorrow, so the miss was
+    silent. A boot inside ``BOOT_CATCHUP_GRACE_SECONDS`` of the slot
+    re-fires it through the same idempotent send path — a slot that
+    already fired is suppressed by the delivery log, so the catch-up
+    can never double-send.
+    """
+    from zoneinfo import ZoneInfo
+
+    et = ZoneInfo("America/New_York")
+    target = _missed_boot_catchup_target(now(et))
+    if target is None:
+        return
+
+    logger.info(
+        "Boot-time catch-up: %s slot missed by service downtime — firing once",
+        target.strftime("%Y-%m-%d %H:%M ET"),
+    )
+
+    # compute_heat_loop's first cycle may still be pulling market
+    # data; wait (bounded) for a heat score before firing.
+    poll_seconds = 5
+    for _ in range(max(1, BOOT_CATCHUP_HEAT_WAIT_SECONDS // poll_seconds)):
+        if app_state.get("alert_manager") and app_state.get("last_heat_score"):
+            break
+        await sleep(poll_seconds)
+
+    await _fire_daily_summary_slot(app_state, target)
+
+
 async def _daily_summary_scheduler(app_state: dict) -> None:
     """Schedule daily summary at 16:30 ET (after market close)."""
     from zoneinfo import ZoneInfo
     et = ZoneInfo("America/New_York")
+
+    # One-shot: a boot inside the catch-up grace window after a
+    # missed slot fires it once (day-58 postmortem, 2026-11-13).
+    await _boot_catchup(app_state)
 
     while True:
         try:
@@ -612,63 +755,9 @@ async def _daily_summary_scheduler(app_state: dict) -> None:
             # (2026-10-24 double-fire, messages 6411/6412).
             await _wait_for_slot(target, et)
 
-            # Send daily summary
-            alert_manager = app_state.get("alert_manager")
-            heat = app_state.get("last_heat_score")
-            if alert_manager and heat:
-                from src.delivery_log import has_scheduled_summary
-
-                delivery_path = getattr(alert_manager, "delivery_log_path", "")
-                if delivery_path and has_scheduled_summary(delivery_path, target.date()):
-                    # Same-slot idempotency: a slot that already fired
-                    # (duplicate task, restart race) must not re-post the
-                    # summary or the weekly scorecard riding it.
-                    logger.warning(
-                        "Daily summary for %s already delivered — duplicate slot fire suppressed",
-                        target.date().isoformat(),
-                    )
-                    continue
-
-                sent = await alert_manager.send_daily_summary(
-                    heat_score=heat,
-                    regime_state=app_state.get("regime_state"),
-                    attribution=app_state.get("attribution"),
-                    recommendations=app_state.get("recommendations"),
-                    data_quality=app_state.get("data_quality"),
-                    scheduled=True,
-                )
-                if sent:
-                    logger.info(
-                        "Daily summary sent (message_id=%s)",
-                        getattr(alert_manager, "last_message_id", None),
-                    )
-                else:
-                    logger.error("Daily summary FAILED to send at scheduled time")
-
-                # Weekly scorecard rides the Monday slot, strictly AFTER
-                # the daily summary: a scorecard failure must never delay
-                # or suppress the daily delivery.
-                if is_weekly_scorecard_slot(target):
-                    try:
-                        text = await produce_weekly_scorecard_text()
-                        if text and await alert_manager.send_weekly_scorecard(
-                            text, scheduled=True
-                        ):
-                            logger.info(
-                                "Weekly scorecard sent (message_id=%s)",
-                                alert_manager.last_message_id,
-                            )
-                        else:
-                            logger.error("Weekly scorecard skipped or FAILED to send")
-                    except Exception as exc:  # noqa: BLE001 - never break the loop
-                        logger.error("Weekly scorecard error: %s", exc)
-
-            else:
-                logger.error(
-                    "Daily summary skipped: alert_manager=%s heat=%s",
-                    alert_manager is not None,
-                    heat is not None,
-                )
+            # Send daily summary (+ Monday weekly scorecard), idempotent
+            # per slot date.
+            await _fire_daily_summary_slot(app_state, target)
 
         except asyncio.CancelledError:
             raise
