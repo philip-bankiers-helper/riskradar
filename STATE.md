@@ -1,10 +1,10 @@
-FRONTIER: increment=W2 status=not met tests=427/428 holdout=4 push=ok
+FRONTIER: increment=W2 status=not met tests=439/440 holdout=4 push=ok
 
 ## What it is
 RiskRadar is a portfolio risk-heat service that posts a 16:30 ET daily summary (plus a Monday weekly scorecard) to the RiskRadar Telegram topic, scored off the sample book in config/positions.yaml.
 
 ## What is currently happening
-The day-58 hole is closed: a bounded boot-time catch-up (commit 2400f2a) now fires a slot missed to host downtime once, idempotently, and it is deployed live (pid 81706); day 61 and scorecard #8 verified as single posts, the live streak is rebuilding at 3 days since the outage reset, and every gate is green (439 tests, holdout 4, secrets).
+All legs of W2 except one are green: 48/48 scheduled summaries since 2026-10-01 carry positions + top-3 attributions + one action (latest msg 7345 on 11-17), the live streak is rebuilding at 4 days since the outage reset, the boot-time catch-up from 2400f2a is deployed and quiet, and every gate is green (439 tests, holdout 4, secrets).
 
 ## What you can do next
 Reply YES or NO in the RiskRadar topic after any daily summary to flip W2, the last open increment — that reply is the only missing piece; the real holdings in config/positions.yaml remain a future upgrade over the SAMPLE book.
@@ -13,4 +13,4 @@ Reply YES or NO in the RiskRadar topic after any daily summary to flip W2, the l
 Mac Studio · /Users/kairox/riskradar · nightly 02:30 Mon–Fri · Telegram Kairox HQ topic 4799 · github.com/philip-bankiers-helper/riskradar · Substack none
 
 ## Document details
-_written nightly by Manager Hermes · 2026-11-17T08:42:50Z_
+_written nightly by Manager Hermes · 2026-11-18T08:35:13Z_
