@@ -24,8 +24,10 @@ Detection rules (deliberately strict):
 - session_start must be on/after --since (default FIRST_W2_EVIDENCE)
 - the user message must be BARE: ``[philip Bankier] yes`` (case/punct
   tolerant) or a bare thumbs up/down ``[philip Bankier] 👍`` (variation
-  selector / skin tone / trailing punctuation tolerated). Anything with
-  extra words is a near-miss, reported but never recorded.
+  selector / skin tone / trailing punctuation tolerated). Natural
+  one-token synonyms (y, yep, yup, yeah / n, nah, nope) are taps too —
+  the token set lives in src.feedback.WORD_VOTES. Anything with extra
+  words is a near-miss, reported but never recorded.
 - a Telegram QUOTED REPLY (the natural way to answer the summary) renders
   as ``[philip Bankier] [Replying to: "..."]\\n\\n<actual reply>`` — the
   quote envelope is stripped before matching, so a reply-to-summary tap
@@ -53,9 +55,16 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
 from src.delivery_log import FIRST_W2_EVIDENCE  # noqa: E402
-from src.feedback import append_feedback, normalize_vote, read_feedback  # noqa: E402
+from src.feedback import WORD_VOTES, append_feedback, normalize_vote, read_feedback  # noqa: E402
 
 logger = logging.getLogger(__name__)
+
+# Tap tokens come from ONE source of truth (src.feedback.WORD_VOTES) so
+# the backstop and the recorder can never disagree on what a tap is.
+# Longest-first: in an alternation a prefix token ("no") listed before
+# a longer one ("nope") could steal the match inside leading/near-miss
+# regexes even though Python backtracking recovers on the anchored ones.
+VOTE_ALT = "|".join(sorted(WORD_VOTES, key=len, reverse=True))
 
 DEFAULT_SESSIONS_DIR = Path.home() / ".hermes" / "sessions"
 DEFAULT_GATEWAY_LOG = Path.home() / ".hermes" / "logs" / "agent.log"
@@ -65,8 +74,8 @@ DEFAULT_SENDER = "philip Bankier"
 TOPIC_LOG_KEY = "group:-1003820528092:4799"
 TOPIC_LOG_SLACK = timedelta(days=1)
 
-BARE_VOTE_RE = re.compile(r"^\[(?P<sender>[^\]]+)\]\s*(?P<vote>yes|no)[\s.!]*$", re.IGNORECASE)
-LEADING_VOTE_RE = re.compile(r"^\[[^]]+\]\s*(yes|no)\b", re.IGNORECASE)
+BARE_VOTE_RE = re.compile(rf"^\[(?P<sender>[^\]]+)\]\s*(?P<vote>{VOTE_ALT})[\s.!]*$", re.IGNORECASE)
+LEADING_VOTE_RE = re.compile(rf"^\[[^]]+\]\s*(?:{VOTE_ALT})\b", re.IGNORECASE)
 # Bare thumbs up/down (optional variation selector / skin tone / trailing
 # punct) counts as a first-class tap; wordy emoji replies are near-misses.
 BARE_EMOJI_RE = re.compile(
@@ -86,11 +95,11 @@ QUOTE_ENVELOPE_RE = re.compile(
     r"^\[(?P<sender>[^\]]+)\]\s*\[Replying to:(?P<quote>.*)\](?P<rest>.+)$",
     re.DOTALL,
 )
-BARE_BODY_VOTE_RE = re.compile(r"^(?P<vote>yes|no)[\s.!]*$", re.IGNORECASE)
+BARE_BODY_VOTE_RE = re.compile(rf"^(?P<vote>{VOTE_ALT})[\s.!]*$", re.IGNORECASE)
 BARE_BODY_EMOJI_RE = re.compile(
     r"^(?P<vote>\U0001f44d|\U0001f44e)[\ufe0f\U0001f3fb-\U0001f3ff\s.!]*$"
 )
-LEADING_BODY_VOTE_RE = re.compile(r"^(yes|no)\b", re.IGNORECASE)
+LEADING_BODY_VOTE_RE = re.compile(rf"^(?:{VOTE_ALT})\b", re.IGNORECASE)
 LEADING_BODY_EMOJI_RE = re.compile(
     r"^(?:\U0001f44d|\U0001f44e)(?:\ufe0f|[\U0001f3fb-\U0001f3ff])?"
 )

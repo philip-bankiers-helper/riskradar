@@ -2,7 +2,10 @@
 """Record Philip's yes/no verdict on the daily summary (W2).
 
 Usage:
-    python scripts/record_feedback.py {yes|no|👍|👎} [--date YYYY-MM-DD] [--base-url URL]
+    python scripts/record_feedback.py {yes|no|y|n|yep|nope|...|👍|👎} [--date YYYY-MM-DD] [--base-url URL]
+
+Accepts any bare yes/no token (y, yep, yup, yeah / n, nah, nope) plus
+the thumbs emoji; everything canonicalizes to yes/no before recording.
 
 Tries the local service's POST /feedback first (single source of
 truth, works with any future storage change); falls back to a direct
@@ -30,6 +33,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
 from src.feedback import (  # noqa: E402
+    AFFIRMATIVE_TOKENS,
+    NEGATIVE_TOKENS,
     THUMBS_DOWN,
     THUMBS_UP,
     VALID_VOTES,
@@ -39,8 +44,16 @@ from src.feedback import (  # noqa: E402
 
 DEFAULT_BASE_URL = "http://127.0.0.1:8001"
 
-# CLI accepts the emoji forms too; they canonicalize to words before use.
-CLI_VOTES = (*VALID_VOTES, THUMBS_UP, THUMBS_DOWN)
+# CLI accepts the emoji forms and the natural one-token synonyms too;
+# they all canonicalize to yes/no before use, so the log format never
+# changes and the service's /feedback endpoint only ever sees words.
+CLI_VOTES = (
+    *VALID_VOTES,
+    *AFFIRMATIVE_TOKENS,
+    *NEGATIVE_TOKENS,
+    THUMBS_UP,
+    THUMBS_DOWN,
+)
 
 
 def post_to_service(base_url: str, vote: str, et_date: str | None) -> bool:

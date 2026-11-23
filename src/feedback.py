@@ -39,20 +39,38 @@ EMOJI_VOTES = {THUMBS_UP: "yes", THUMBS_DOWN: "no"}
 # in a bare tap ("👍️", "👍🏽") without changing its meaning.
 _EMOJI_MODIFIERS = frozenset("\ufe0f\U0001f3fb\U0001f3fc\U0001f3fd\U0001f3fe\U0001f3ff")
 
+# Natural one-token affirmations/denials count as the same tap (found
+# 2026-11-23: a bare "y"/"nope" was invisible to normalize_vote AND to
+# the nightly backstop — not even a near-miss — so a real tap in the
+# most casual form would have stalled W2 forever). Ambiguous
+# acknowledgments ("ok", "sure") deliberately stay OUT: in a topic that
+# also carries conversation they cannot be attributed to the summary
+# question. Longest-first within each polarity so regex alternation
+# built from these keys never half-matches ("nope" as "no" + "pe").
+AFFIRMATIVE_TOKENS = ("yeah", "yep", "yup", "yes", "y")
+NEGATIVE_TOKENS = ("nope", "nah", "no", "n")
+WORD_VOTES: dict[str, str] = {token: "yes" for token in AFFIRMATIVE_TOKENS}
+WORD_VOTES.update({token: "no" for token in NEGATIVE_TOKENS})
+
 
 def normalize_vote(value: str) -> str:
     """Validate and canonicalize a vote to 'yes' or 'no'.
 
-    Accepts the words yes/no (case-insensitive) or a bare thumbs
-    up/down emoji (with optional variation selector / skin tone).
+    Accepts yes/no and their natural one-token synonyms y/yep/yup/yeah,
+    n/nah/nope (case-insensitive), or a bare thumbs up/down emoji (with
+    optional variation selector / skin tone). Records always store the
+    canonical word so downstream readers never see the alias form.
     """
     vote = (value or "").strip().lower()
     stripped = "".join(ch for ch in vote if ch not in _EMOJI_MODIFIERS)
     if stripped in EMOJI_VOTES:
         return EMOJI_VOTES[stripped]
-    if vote in VALID_VOTES:
-        return vote
-    raise ValueError(f"vote must be one of {VALID_VOTES} (or a bare {THUMBS_UP}/{THUMBS_DOWN}), got {value!r}")
+    if vote in WORD_VOTES:
+        return WORD_VOTES[vote]
+    raise ValueError(
+        f"vote must be a bare yes/no token ({'/'.join(WORD_VOTES)}), "
+        f"or a bare {THUMBS_UP}/{THUMBS_DOWN}, got {value!r}"
+    )
 
 
 def append_feedback(

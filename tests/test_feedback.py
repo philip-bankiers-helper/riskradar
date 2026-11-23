@@ -117,6 +117,31 @@ class TestEmojiVotes:
                 normalize_vote(bad)
 
 
+class TestAliasVotes:
+    """Natural one-token synonyms are taps; records stay yes/no words."""
+
+    def test_word_aliases_canonicalized(self):
+        for token in ("y", "Y", "yep", "YEP", "yup", "yeah"):
+            assert normalize_vote(token) == "yes", token
+        for token in ("n", "N", "nah", "nope", "Nope"):
+            assert normalize_vote(token) == "no", token
+
+    def test_alias_written_as_canonical_word(self, tmp_path: Path):
+        log = tmp_path / "feedback_log.jsonl"
+        append_feedback(log, vote="yep", et_date="2026-11-23")
+        fb = last_feedback(log)
+        assert fb is not None
+        assert fb["vote"] == "yes"  # downstream readers never see the alias
+
+    def test_ambiguous_or_wordy_still_rejected(self):
+        # "ok"/"sure" cannot be attributed to the summary question in a
+        # conversational topic; punct and multi-word stay strict here
+        # (the backstop regex strips trailing punct before calling).
+        for bad in ("ok", "okay", "sure", "ye", "no thanks", "yes!", "y e s"):
+            with pytest.raises(ValueError):
+                normalize_vote(bad)
+
+
 class TestSummaryRendering:
     async def _send(self, manager: AlertManager) -> str:
         sent: list[str] = []

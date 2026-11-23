@@ -72,8 +72,24 @@ class TestBareVoteRegex:
             match = BARE_VOTE_RE.match(text)
             assert match is not None, text
 
+    def test_bare_alias_variants(self):
+        """Natural one-token synonyms are taps (src.feedback.WORD_VOTES)."""
+        for text in (
+            "[philip Bankier] y",
+            "[philip Bankier] Y.",
+            "[philip Bankier] yep",
+            "[philip Bankier] YUP!",
+            "[philip Bankier] yeah",
+            "[philip Bankier] n",
+            "[philip Bankier] nah",
+            "[philip Bankier] nope.",
+        ):
+            match = BARE_VOTE_RE.match(text)
+            assert match is not None, text
+
     def test_non_bare_rejected(self):
-        for text in ("[philip Bankier] yes but add PLTR", "[philip Bankier] nope", "yes", "[philip Bankier]"):
+        # "nope" moved to the alias tests on 2026-11-23: it is a tap now.
+        for text in ("[philip Bankier] yes but add PLTR", "yes", "[philip Bankier]"):
             assert BARE_VOTE_RE.match(text) is None, text
 
 
@@ -123,6 +139,49 @@ class TestScanSessions:
         candidates, near, mismatches = scan_sessions(tmp_path, since=SINCE, sender=SENDER)
         assert candidates == []
         assert len(near) == 1
+
+    def test_bare_alias_tap_is_candidate_with_canonical_vote(self, tmp_path):
+        """A casual bare "y"/"nope" is found and canonicalized (2026-11-23)."""
+        write_session(
+            tmp_path,
+            "session_alias_y.json",
+            messages=[user("[philip Bankier] y")],
+            mtime=datetime(2026, 10, 2, 16, 45),
+        )
+        write_session(
+            tmp_path,
+            "session_alias_nope.json",
+            messages=[user("[philip Bankier] nope")],
+            mtime=datetime(2026, 10, 2, 16, 46),
+        )
+        candidates, near, mismatches = scan_sessions(tmp_path, since=SINCE, sender=SENDER)
+        assert [c["vote"] for c in candidates] == ["yes", "no"]
+        assert near == []
+        assert mismatches == []
+
+    def test_quoted_alias_reply_is_candidate(self, tmp_path):
+        write_session(
+            tmp_path,
+            "session_quoted_alias.json",
+            messages=[
+                user('[philip Bankier] [Replying to: "🔥 Heat 0.42 ... Was this useful? Reply YES / NO"]\n\nyep')
+            ],
+            mtime=datetime(2026, 10, 2, 16, 45),
+        )
+        candidates, near, mismatches = scan_sessions(tmp_path, since=SINCE, sender=SENDER)
+        assert len(candidates) == 1
+        assert candidates[0]["vote"] == "yes"
+
+    def test_ambiguous_acknowledgment_invisible(self, tmp_path):
+        """Bare "ok" is neither candidate nor near-miss — cannot be
+        attributed to the summary question in a conversational topic."""
+        write_session(
+            tmp_path,
+            "session_ok.json",
+            messages=[user("[philip Bankier] ok")],
+            mtime=datetime(2026, 10, 2, 16, 45),
+        )
+        assert scan_sessions(tmp_path, since=SINCE, sender=SENDER) == ([], [], [])
 
     def test_other_sender_ignored(self, tmp_path):
         write_session(
@@ -442,6 +501,22 @@ class TestRunCheck:
         report = run_check(sessions_dir=sessions, gateway_log=log, feedback_log=fb, since=SINCE, apply=True)
         assert report["recorded"]["vote"] == "yes"
         assert json.loads(fb.read_text().strip())["vote"] == "yes"
+
+    def test_apply_records_alias_tap_as_canonical_word(self, tmp_path):
+        sessions = tmp_path / "sessions"
+        sessions.mkdir()
+        write_session(
+            sessions,
+            "session_alias.json",
+            messages=[user("[philip Bankier] nope")],
+            mtime=datetime(2026, 10, 2, 16, 45),
+        )
+        log = tmp_path / "agent.log"
+        write_log(log, [(date(2026, 10, 2), "Flushing ...group:-1003820528092:4799")])
+        fb = tmp_path / "feedback.jsonl"
+        report = run_check(sessions_dir=sessions, gateway_log=log, feedback_log=fb, since=SINCE, apply=True)
+        assert report["recorded"]["vote"] == "no"
+        assert json.loads(fb.read_text().strip())["vote"] == "no"
 
     def test_apply_skips_when_feedback_already_newer(self, tmp_path):
         sessions = tmp_path / "sessions"
