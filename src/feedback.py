@@ -73,23 +73,57 @@ def normalize_vote(value: str) -> str:
     )
 
 
+def _normalize_tapped_at(value: datetime | str | None) -> str:
+    """Normalize a tap moment to aware-UTC ISO for storage.
+
+    None means "now" (correct only for a live relay). A naive datetime
+    is interpreted as local machine time — the convention of transcript
+    file mtimes, the only moment the offline backstop store carries.
+    """
+    if value is None:
+        return datetime.now(timezone.utc).isoformat()
+    if isinstance(value, datetime):
+        moment = value
+    else:
+        raw = str(value).strip()
+        try:
+            moment = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        except ValueError:
+            raise ValueError(
+                f"tapped_at must be a datetime or ISO datetime string, got {value!r}"
+            ) from None
+    if moment.tzinfo is None:
+        moment = moment.astimezone()  # naive -> system-local aware
+    return moment.astimezone(timezone.utc).isoformat()
+
+
 def append_feedback(
     path: str | Path,
     *,
     vote: str,
     et_date: str | None = None,
     source: str = "reply",
+    tapped_at: datetime | str | None = None,
 ) -> dict:
     """Append one feedback record. Mirrors ``append_delivery`` semantics.
 
     Raises ``ValueError`` on an invalid vote (callers must validate
     intent before recording); any other failure to write is logged and
     re-raised, since recording a tap is the caller's whole job.
+
+    ``tapped_at`` pins the record to the tap's real moment. The default
+    (None) stamps now, which is only correct when the caller is relaying
+    the tap live. A DELAYED relay (the nightly transcript backstop,
+    which can run days after the tap on a weekday-only runner) must pass
+    the tap's own moment or the permanent W2 evidence — and the ack the
+    next summary shows Philip — carries the apply-run date instead.
+    Accepts a datetime (naive = local machine time, matching transcript
+    file mtimes) or an ISO string; stored normalized to aware UTC.
     """
     record = {
         "et_date": et_date or datetime.now(ET).date().isoformat(),
         "vote": normalize_vote(vote),
-        "tapped_at": datetime.now(timezone.utc).isoformat(),
+        "tapped_at": _normalize_tapped_at(tapped_at),
         "source": source,
     }
     target = Path(path)

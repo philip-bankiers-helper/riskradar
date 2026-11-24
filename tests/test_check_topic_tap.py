@@ -21,6 +21,7 @@ from scripts.check_topic_tap import (
     scan_sessions,
     topic_active_dates,
 )
+from src.delivery_log import ET
 
 SENDER = "philip Bankier"
 SINCE = date(2026, 10, 1)
@@ -547,6 +548,72 @@ class TestRunCheck:
         assert "latest tap wins" in report["reason"]
         # The pre-existing record is untouched.
         assert json.loads(fb.read_text().strip())["vote"] == "no"
+
+    def test_apply_records_tap_moment_not_apply_time(self, tmp_path):
+        """A delayed relay stamps the tap's own moment (found 2026-11-24).
+
+        The runner is weekday-only; a weekend tap applied Monday used to
+        land in the permanent W2 evidence — and the ack the next summary
+        shows Philip — stamped with the apply-run date. The record must
+        carry the transcript's moment: et_date as its ET day, tapped_at
+        as the mtime instant in aware UTC.
+        """
+        tap_local = datetime(2026, 10, 3, 16, 45)  # naive local, like mtime
+        sessions = tmp_path / "sessions"
+        sessions.mkdir()
+        write_session(
+            sessions,
+            "session_weekend.json",
+            session_start="2026-10-03T09:00:00",
+            messages=[user("[philip Bankier] yep")],
+            mtime=tap_local,
+        )
+        log = tmp_path / "agent.log"
+        write_log(log, [(date(2026, 10, 3), "Flushing ...group:-1003820528092:4799")])
+        fb = tmp_path / "feedback.jsonl"
+        report = run_check(sessions_dir=sessions, gateway_log=log, feedback_log=fb, since=SINCE, apply=True)
+        recorded = report["recorded"]
+        assert recorded["vote"] == "yes"
+        assert recorded["et_date"] == tap_local.astimezone(ET).date().isoformat()
+        stored = datetime.fromisoformat(recorded["tapped_at"])
+        assert stored.tzinfo is not None
+        assert stored.astimezone() == tap_local.astimezone()
+        # The persisted record matches the returned one.
+        assert json.loads(fb.read_text().strip()) == recorded
+
+    def test_apply_guard_reads_et_date_not_tapped_at_utc_prefix(self, tmp_path):
+        """Latest-tap-wins must compare tap DAYS, not the UTC date prefix.
+
+        A record with et_date 10-05 but an old tapped_at prefix would
+        sneak past the old guard (which read tapped_at[:10]) and cause a
+        double record for an older candidate.
+        """
+        sessions = tmp_path / "sessions"
+        sessions.mkdir()
+        write_session(
+            sessions,
+            "session_old.json",
+            messages=[user("[philip Bankier] yes")],
+            mtime=datetime(2026, 10, 2, 16, 45),
+        )
+        log = tmp_path / "agent.log"
+        write_log(log, [(date(2026, 10, 2), "Flushing ...group:-1003820528092:4799")])
+        fb = tmp_path / "feedback.jsonl"
+        fb.write_text(
+            json.dumps(
+                {
+                    "et_date": "2026-10-05",
+                    "vote": "no",
+                    "tapped_at": "2026-09-01T00:00:00+00:00",
+                    "source": "reply",
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        report = run_check(sessions_dir=sessions, gateway_log=log, feedback_log=fb, since=SINCE, apply=True)
+        assert report["recorded"] is None
+        assert "latest tap wins" in report["reason"]
 
 
 class TestCli:

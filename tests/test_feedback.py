@@ -8,7 +8,7 @@ read side (getUpdates) — a second consumer would fight the gateway.
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -83,6 +83,44 @@ class TestFeedbackModule:
         log.write_text("not json\n", encoding="utf-8")
         append_feedback(log, vote="no", et_date="2026-09-29")
         assert [r["vote"] for r in read_feedback(log)] == ["no"]
+
+    def test_explicit_tapped_at_naive_datetime_is_local(self, tmp_path: Path):
+        """A naive datetime means local machine time (transcript mtime rule).
+
+        A delayed relay (the weekday-only backstop applying a weekend
+        tap) pins the record to the tap's own moment, not apply time.
+        """
+        log = tmp_path / "feedback_log.jsonl"
+        naive = datetime(2026, 10, 3, 16, 45)  # a tap weeks before apply-run
+        append_feedback(log, vote="yes", et_date="2026-10-03", tapped_at=naive)
+        rec = last_feedback(log)
+        stored = datetime.fromisoformat(rec["tapped_at"])
+        assert stored.tzinfo is not None
+        # Same wall-clock instant, expressed in the original local zone.
+        assert stored.astimezone() == naive.astimezone()
+        # And clearly not "now" (the apply-run moment).
+        assert abs((datetime.now().astimezone(timezone.utc) - stored).days) > 30
+
+    def test_explicit_tapped_at_iso_string_normalized(self, tmp_path: Path):
+        log = tmp_path / "feedback_log.jsonl"
+        append_feedback(
+            log, vote="no", et_date="2026-11-28", tapped_at="2026-11-28T15:00:00Z"
+        )
+        rec = last_feedback(log)
+        assert rec["tapped_at"] == "2026-11-28T15:00:00+00:00"
+
+    def test_invalid_tapped_at_rejected(self, tmp_path: Path):
+        log = tmp_path / "feedback_log.jsonl"
+        with pytest.raises(ValueError):
+            append_feedback(log, vote="yes", tapped_at="not-a-datetime")
+        assert not log.exists()
+
+    def test_default_tapped_at_still_now(self, tmp_path: Path):
+        log = tmp_path / "feedback_log.jsonl"
+        before = datetime.now(timezone.utc)
+        append_feedback(log, vote="yes")
+        stored = datetime.fromisoformat(last_feedback(log)["tapped_at"])
+        assert before - timedelta(seconds=5) <= stored <= datetime.now(timezone.utc)
 
     def test_no_telegram_read_side(self):
         """Shared-bot invariant: never grow a getUpdates consumer here."""

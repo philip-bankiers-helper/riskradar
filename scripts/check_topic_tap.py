@@ -38,7 +38,11 @@ Detection rules (deliberately strict):
   (never recorded, never a candidate) so a Telegram display-name change
   cannot make a real tap silently invisible — rerun with --sender.
 - with --apply, only the NEWEST topic_verified candidate is recorded,
-  and only if the feedback log has no record on/after its date.
+  and only if the feedback log has no record on/after its date. The
+  record carries the TAP's moment (et_date + tapped_at from the
+  transcript's mtime — the most precise moment the offline store has),
+  never the apply-run moment: this runner is weekday-only, so a weekend
+  tap applied Monday must not be stamped Monday.
 """
 
 from __future__ import annotations
@@ -54,7 +58,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
-from src.delivery_log import FIRST_W2_EVIDENCE  # noqa: E402
+from src.delivery_log import ET, FIRST_W2_EVIDENCE  # noqa: E402
 from src.feedback import WORD_VOTES, append_feedback, normalize_vote, read_feedback  # noqa: E402
 
 logger = logging.getLogger(__name__)
@@ -113,6 +117,30 @@ def _parse_session_dt(value: object) -> datetime | None:
         return datetime.fromisoformat(value)
     except ValueError:
         return None
+
+
+def _record_day(record: dict | None) -> date | None:
+    """The ET tap day a stored feedback record claims.
+
+    Prefers the record's ``et_date`` (canonical, ET) and falls back to
+    the UTC date prefix of ``tapped_at`` — the pre-2026-11-24 shape —
+    so the latest-tap-wins guard never crashes on a hand-written log.
+    """
+    if record is None:
+        return None
+    et_date = record.get("et_date")
+    if isinstance(et_date, str):
+        try:
+            return date.fromisoformat(et_date)
+        except ValueError:
+            pass
+    tapped_at = record.get("tapped_at")
+    if isinstance(tapped_at, str) and len(tapped_at) >= 10:
+        try:
+            return date.fromisoformat(tapped_at[:10])
+        except ValueError:
+            pass
+    return None
 
 
 def scan_sessions(
@@ -263,7 +291,7 @@ def run_check(
     verified = [dict(c, topic_verified=True) for c in candidates if _topic_verified(c, active_dates)]
     feedback = read_feedback(feedback_log)
     last = feedback[-1] if feedback else None
-    last_day = date.fromisoformat(last["tapped_at"][:10]) if last else None
+    last_day = _record_day(last)
 
     report: dict = {
         "since": since.isoformat(),
@@ -296,7 +324,10 @@ def run_check(
         return report
 
     newest = verified[-1]
-    newest_day = newest["mtime"].date()
+    # The tap's moment, not the apply-run moment: mtime is naive local
+    # (transcript convention); et_date is its ET calendar day because
+    # w2_status and the summary ack both speak ET days.
+    newest_day = newest["mtime"].astimezone(ET).date()
     if last_day is not None and last_day >= newest_day:
         report["reason"] = (
             f"feedback log already has a record on/after {newest_day}; latest tap wins, nothing to do"
@@ -312,6 +343,8 @@ def run_check(
     record = append_feedback(
         feedback_log,
         vote=newest["vote"],
+        et_date=newest_day.isoformat(),
+        tapped_at=newest["mtime"],
         source=f"transcript-relay:{newest['session_id']}",
     )
     report["recorded"] = record
