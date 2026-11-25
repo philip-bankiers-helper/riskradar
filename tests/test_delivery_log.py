@@ -11,6 +11,7 @@ from src.alerts.alert_manager import AlertManager
 from src.delivery_log import (
     ET,
     WEEKLY_SCORECARD,
+    alert_episodes,
     append_delivery,
     daily_streak,
     has_scheduled_summary,
@@ -738,3 +739,146 @@ class TestW3Status:
         from src.engine.weekly_scorecard import WEEKLY_SCORECARD_TIER
 
         assert WEEKLY_SCORECARD == WEEKLY_SCORECARD_TIER
+
+
+def _append_alert(path, day: date, message_id: int, heat: float):
+    ok = append_delivery(
+        path,
+        tier="alert_level_change",
+        message_id=message_id,
+        heat_score=heat,
+        scheduled=False,
+        now=datetime(day.year, day.month, day.day, 1, 3, 0),
+    )
+    assert ok is True
+
+
+class TestAlertEpisodes:
+    """Warm-episode reconstruction from alert_level_change records.
+
+    Pins the 2026-11-23/24 lesson: the nightly runner recorded "live
+    /heat corroborates cool" while episode #4 was open — the episode
+    state must be derivable from the log and cross-checkable against
+    the live level, never hand-copied.
+    """
+
+    def test_thresholds_pin_calibrated_defaults(self):
+        from src.delivery_log import DEFAULT_LEVEL_THRESHOLDS
+        from src.engine.heat_score import HeatScoreCalculator
+
+        calc = HeatScoreCalculator()
+        assert DEFAULT_LEVEL_THRESHOLDS["warm"] == calc.thresholds["warm"]
+        assert DEFAULT_LEVEL_THRESHOLDS["hot"] == calc.thresholds["hot"]
+        assert DEFAULT_LEVEL_THRESHOLDS["critical"] == calc.thresholds["critical"]
+        assert DEFAULT_LEVEL_THRESHOLDS["emergency"] == calc.thresholds["emergency"]
+
+    def test_classify_boundaries(self):
+        from src.delivery_log import classify_heat_score
+
+        assert classify_heat_score(0.0) == "cool"
+        assert classify_heat_score(0.4635) == "cool"
+        assert classify_heat_score(0.4636) == "warm"
+        assert classify_heat_score(0.6731) == "warm"
+        assert classify_heat_score(0.6732) == "hot"
+        assert classify_heat_score(0.8028) == "hot"
+        assert classify_heat_score(0.8029) == "critical"
+        assert classify_heat_score(0.8780) == "critical"
+        assert classify_heat_score(0.8781) == "emergency"
+        assert classify_heat_score(1.0) == "emergency"
+
+    def test_empty_log_is_consistent_cool(self, tmp_path):
+        result = alert_episodes(tmp_path / "log.jsonl", current_level="cool")
+        assert result["episodes_total"] == 0
+        assert result["verdict"] == "consistent"
+
+    def test_open_close_pair_reconstructed(self, tmp_path):
+        log = tmp_path / "log.jsonl"
+        _append_alert(log, date(2026, 11, 6), 6686, 0.5254)
+        _append_alert(log, date(2026, 11, 7), 6786, 0.4007)
+        result = alert_episodes(log, current_level="cool")
+        assert result["episodes_total"] == 1
+        assert result["closed_pairs"] == 1
+        assert result["open_episodes"] == 0
+        ep = result["episodes"][0]
+        assert ep["status"] == "closed"
+        assert ep["opened"]["message_id"] == 6686
+        assert ep["opened"]["level"] == "warm"
+        assert ep["closed"]["message_id"] == 6786
+        assert ep["closed"]["level"] == "cool"
+        assert result["verdict"] == "consistent"
+
+    def test_production_shape_four_episodes_last_open(self, tmp_path):
+        # Mirrors the real log: three closed pairs 10-06..11-11 plus
+        # episode #4 open since 11-21 (message 7355, heat 0.5849).
+        log = tmp_path / "log.jsonl"
+        _append_scheduled(log, date(2026, 11, 20), 7351)  # noise: other tiers ignored
+        _append_alert(log, date(2026, 10, 6), 6329, 0.4646)
+        _append_alert(log, date(2026, 10, 7), 6331, 0.2181)
+        _append_alert(log, date(2026, 11, 6), 6686, 0.5254)
+        _append_alert(log, date(2026, 11, 7), 6786, 0.4007)
+        _append_alert(log, date(2026, 11, 10), 6897, 0.5261)
+        _append_alert(log, date(2026, 11, 11), 6917, 0.4420)
+        _append_alert(log, date(2026, 11, 21), 7355, 0.5849)
+        result = alert_episodes(log, current_level="warm")
+        assert result["episodes_total"] == 4
+        assert result["closed_pairs"] == 3
+        assert result["open_episodes"] == 1
+        last = result["episodes"][-1]
+        assert last["status"] == "open"
+        assert last["opened"]["et_date"] == "2026-11-21"
+        assert last["opened"]["message_id"] == 7355
+        assert result["verdict"] == "consistent"
+
+    def test_open_episode_with_cool_live_level_is_missing_close(self, tmp_path):
+        # The exact 2026-11-23/24 failure mode, now caught mechanically:
+        # episode open in the log, live level cool -> the close broadcast
+        # was never sent/recorded.
+        log = tmp_path / "log.jsonl"
+        _append_alert(log, date(2026, 11, 21), 7355, 0.5849)
+        result = alert_episodes(log, current_level="cool")
+        assert result["open_episodes"] == 1
+        assert result["verdict"] == "missing_close"
+
+    def test_live_warm_with_no_open_episode_is_missing_open(self, tmp_path):
+        log = tmp_path / "log.jsonl"
+        _append_alert(log, date(2026, 10, 6), 6329, 0.4646)
+        _append_alert(log, date(2026, 10, 7), 6331, 0.2181)
+        result = alert_episodes(log, current_level="warm")
+        assert result["open_episodes"] == 0
+        assert result["verdict"] == "missing_open"
+
+    def test_no_live_level_is_unchecked(self, tmp_path):
+        log = tmp_path / "log.jsonl"
+        _append_alert(log, date(2026, 11, 21), 7355, 0.5849)
+        result = alert_episodes(log)
+        assert result["verdict"] == "unchecked"
+        assert result["current_level"] is None
+
+    def test_escalation_within_episode_not_a_new_open(self, tmp_path):
+        log = tmp_path / "log.jsonl"
+        _append_alert(log, date(2026, 11, 6), 6686, 0.5254)  # open, warm
+        _append_alert(log, date(2026, 11, 6), 6690, 0.7011)  # escalate, hot
+        _append_alert(log, date(2026, 11, 7), 6786, 0.5001)  # de-escalate, still warm
+        _append_alert(log, date(2026, 11, 8), 6799, 0.3181)  # close, cool
+        result = alert_episodes(log, current_level="cool")
+        assert result["episodes_total"] == 1
+        ep = result["episodes"][0]
+        assert ep["status"] == "closed"
+        assert ep["peak_level"] == "hot"
+        assert ep["levels"] == ["warm", "hot", "warm"]
+        assert result["verdict"] == "consistent"
+
+    def test_record_without_heat_score_skipped_and_counted(self, tmp_path):
+        log = tmp_path / "log.jsonl"
+        append_delivery(log, tier="alert_level_change", message_id=1, now=datetime(2026, 11, 6, 1, 3, 0))
+        _append_alert(log, date(2026, 11, 7), 6786, 0.4007)
+        result = alert_episodes(log, current_level="cool")
+        assert result["records_without_heat_score"] == 1
+        assert result["episodes_total"] == 0
+
+    def test_first_record_cool_creates_no_episode(self, tmp_path):
+        log = tmp_path / "log.jsonl"
+        _append_alert(log, date(2026, 11, 6), 6686, 0.2181)
+        result = alert_episodes(log, current_level="cool")
+        assert result["episodes_total"] == 0
+        assert result["verdict"] == "consistent"

@@ -467,6 +467,139 @@ def w3_status(
     }
 
 
+# ── Alert-tier episode evidence ──
+
+# Tier name used by AlertManager for heat level-change broadcasts.
+ALERT_LEVEL_CHANGE = "alert_level_change"
+
+# Level thresholds mirror HeatScoreCalculator's calibrated defaults
+# (src/engine/heat_score.py) — duplicated so this leaf module stays
+# engine-free, pinned equal by test. The episode verdict only needs to
+# classify a recorded heat score into cool vs at-or-above warm.
+DEFAULT_LEVEL_THRESHOLDS = {
+    "warm": 0.4636,
+    "hot": 0.6732,
+    "critical": 0.8029,
+    "emergency": 0.8781,
+}
+
+_LEVEL_SEVERITY = {"cool": 0, "warm": 1, "hot": 2, "critical": 3, "emergency": 4}
+
+
+def classify_heat_score(score: float, thresholds: dict[str, float] | None = None) -> str:
+    """Map a heat score to its level name (cool..emergency).
+
+    Same ordering semantics as HeatScoreCalculator: score at or above
+    the warm threshold is at least warm; below it is cool.
+    """
+    if thresholds is None:
+        thresholds = DEFAULT_LEVEL_THRESHOLDS
+    if score >= thresholds["emergency"]:
+        return "emergency"
+    if score >= thresholds["critical"]:
+        return "critical"
+    if score >= thresholds["hot"]:
+        return "hot"
+    if score >= thresholds["warm"]:
+        return "warm"
+    return "cool"
+
+
+def alert_episodes(
+    path: str | Path,
+    *,
+    thresholds: dict[str, float] | None = None,
+    current_level: str | None = None,
+) -> dict:
+    """Reconstruct warm-episode open/close pairs from level-change broadcasts.
+
+    Every ``alert_level_change`` delivery record carries the heat score
+    at the moment of the transition, so the level each broadcast
+    announced can be re-derived from the log alone — no live state, no
+    runner memory. An episode OPENS when a broadcast announces
+    at-or-above warm while none is open (cool->warm) and CLOSES when a
+    broadcast announces cool while one is open (warm->cool).
+    Within-episode escalations (warm->hot) and de-escalations that stay
+    warm are level history of the open episode, never new opens.
+
+    ``current_level`` (optional, from the live service's /heat) turns
+    the episode history into a consistency verdict:
+    ``consistent`` — the live level agrees with the last episode's
+    open/closed state; ``missing_close`` — an episode is open in the
+    log but the live level is cool (a close broadcast was never
+    sent/recorded); ``missing_open`` — the live level is at-or-above
+    warm with no open episode (an open broadcast was never
+    sent/recorded). With no live level supplied the verdict is
+    ``unchecked``.
+
+    Motivation: the nightly PROGRESS entries for 2026-11-23/24 claimed
+    "live /heat corroborates cool" while the service was continuously
+    warm with episode #4 open since 2026-11-21 (message 7355) —
+    hand-copied numbers nothing in the repo could catch. This makes
+    the alert-tier evidence mechanical.
+    """
+    episodes: list[dict] = []
+    open_episode: dict | None = None
+    skipped = 0
+    for rec in read_deliveries(path):
+        if rec.get("tier") != ALERT_LEVEL_CHANGE:
+            continue
+        score = rec.get("heat_score")
+        if score is None:
+            skipped += 1
+            continue
+        level = classify_heat_score(float(score), thresholds)
+        entry = {
+            "et_date": rec.get("et_date"),
+            "message_id": rec.get("message_id"),
+            "heat_score": score,
+            "level": level,
+        }
+        if level == "cool":
+            if open_episode is not None:
+                open_episode["closed"] = entry
+                open_episode["status"] = "closed"
+                episodes.append(open_episode)
+                open_episode = None
+        elif open_episode is None:
+            open_episode = {
+                "opened": entry,
+                "peak_level": level,
+                "levels": [level],
+                "status": "open",
+            }
+        else:
+            open_episode["levels"].append(level)
+            if _LEVEL_SEVERITY[level] > _LEVEL_SEVERITY[open_episode["peak_level"]]:
+                open_episode["peak_level"] = level
+    if open_episode is not None:
+        episodes.append(open_episode)
+
+    live_open = next((e for e in episodes if e["status"] == "open"), None)
+    live = bool(current_level) and current_level != "cool"
+    if current_level is None:
+        verdict = "unchecked"
+    elif live_open is not None and not live:
+        verdict = "missing_close"
+    elif live_open is not None and live:
+        verdict = "consistent"
+    elif live_open is None and live:
+        verdict = "missing_open"
+    else:
+        verdict = "consistent"
+
+    closed_pairs = sum(1 for e in episodes if e["status"] == "closed")
+    return {
+        "episodes_total": len(episodes),
+        "closed_pairs": closed_pairs,
+        "open_episodes": len(episodes) - closed_pairs,
+        "episodes": episodes,
+        "records_without_heat_score": skipped,
+        "current_level": current_level,
+        "verdict": verdict,
+    }
+
+
 # ── W2: portfolio-driven summary verdict ──
 
 
